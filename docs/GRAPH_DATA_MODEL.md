@@ -1,13 +1,26 @@
-# Graph Data Model — Phase 1I/1J (Phase 1.5: Findings 1 & 2 resolved)
+# Graph Data Model — Phase 1I/1J (Phase 1.5: Findings 1 & 2 resolved; Phase 3: validated at full scale)
 
 NetworkX only (`src/graph/build_graph.py`,
 `src/graph/relationship_views.py`) — explicitly no Neo4j (design doc
 Section 13) and no GNN (design doc Section 14). This document describes
 the graph schema; **the current ring-detection performance numbers now
-live in `docs/GRAPH_BENCHMARK.md`**, which supersedes this document's
-old §3/§4 diagnostics-only findings with a resolved, measured
-comparison. §3/§4 below are kept as history — both findings they
-describe are now **resolved** in Phase 1.5, not still-open decisions.
+live in `docs/GRAPH_BENCHMARK_FULL.md`** (all 590,540 real transactions,
+Phase 3), which supersedes `docs/GRAPH_BENCHMARK.md`'s 20,000-row dev
+result, which in turn superseded this document's original §3/§4
+diagnostics-only findings. §3/§4 below are kept as history — both
+findings they describe are **resolved** (Phase 1.5) and **confirmed at
+full production scale** (Phase 3), not open decisions at any level.
+
+**Phase 3 headline additions, not covered below (see the dedicated
+docs):** the weighting-strategy question (§5) is now **definitively**
+answered, not just "inconclusive at dev scale" —
+`docs/GRAPH_BENCHMARK_FULL.md` §3. The bank-account false-positive
+concern is resolved — 0% FP across 81 scored legitimate clusters in the
+recommended multi-attribute view at full scale,
+`docs/GRAPH_BENCHMARK_FULL.md` §5. Whether the graph adds value beyond
+transaction-level ML — the actual point of building it — is answered in
+`docs/ML_GRAPH_ABLATION.md`, with the two-part honest answer that a
+single ablation table cannot capture on its own.
 
 ---
 
@@ -128,29 +141,38 @@ not a remaining gap. See `docs/GRAPH_BENCHMARK.md` §9.
 
 ---
 
-## 5. Edge weighting (Decision 4) — see `docs/GRAPH_BENCHMARK.md` §11
+## 5. Edge weighting (Decision 4) — RESOLVED at full scale, `docs/GRAPH_BENCHMARK_FULL.md` §3
 
-Two strategies implemented in `src/graph/relationship_views.py`: `flat`
-(a fixed prior per relationship type — device/bank_account high,
-IP moderate, address moderate/low) and `inverse_frequency` (prior scaled
-by `1/n_sharing`, so a pair sharing an attribute with only 1 other
-customer counts more than a pair sharing it with hundreds). Tested, not
-assumed: at dev-sample scale, both strategies produced identical ring
-recovery results everywhere measured — investigated and explained in
-`docs/GRAPH_BENCHMARK.md` §11 (the corrected model already produces
-small, disconnected components, giving weighting no structural ambiguity
-to resolve). Re-test at full-benchmark scale before Phase 2 commits to
-either strategy for production use.
+Three strategies implemented in `src/graph/relationship_views.py`: `flat`
+(a fixed prior per relationship type — device/bank_account high, IP
+moderate), `inverse_frequency` (prior scaled by `1/n_sharing`), and
+`inverse_log_frequency` (a dampened, "rarity-based" variant, Phase 3C).
+At dev scale (Phase 1.5) this was reported inconclusive, pending a
+full-scale re-test. **Phase 3C re-tested at all 590,540 transactions:
+every strategy still produces byte-identical results.** This is now a
+definitive conclusion, not a pending question — the corrected generation
+model structurally cannot create the kind of large, entangled components
+that would give edge weight any opportunity to matter, at any scale
+tested. **Frozen choice: flat weighting** (simplest, most interpretable —
+`docs/GRAPH_BENCHMARK_FULL.md` §3/§6).
 
 ---
 
-## 6. Recommendation for Phase 2
+## 6. Recommendation for Phase 3 — carried out and reported
 
-Superseded by `docs/GRAPH_BENCHMARK.md` §11's evidence-based
-recommendation: use the multi-attribute combined view (Strategy D) as
-the primary ring-detection graph, keep the single-relationship views for
-per-attribute evidence/explanation, and never fall back to the full
-heterogeneous graph for detection topology. Remaining open items before
-Phase 2 commits further: re-run the weighting comparison and the
-bank-account false-positive rate at full-benchmark scale
-(`docs/GRAPH_BENCHMARK.md` §13).
+Superseded by `docs/GRAPH_BENCHMARK_FULL.md`'s full-scale, evidence-based
+results: the multi-attribute combined view (device+IP+bank_account,
+flat weighting, connected components) is the **frozen** primary
+ring-detection graph (`docs/GRAPH_BENCHMARK_FULL.md` §6); single-
+relationship views remain available as per-attribute investigation
+evidence (`docs/CASE_MODEL.md`); the full heterogeneous graph is never
+used for detection topology (verified explicitly,
+`docs/GRAPH_BENCHMARK_FULL.md` §2). Both items flagged as open at dev
+scale — weighting and the bank-account false-positive rate — are now
+resolved: weighting is definitively inconclusive-by-design (§5 above),
+and the bank-account FP concern was specific to the single-relationship
+view and does not appear in the recommended multi-attribute view (0% FP
+across 81 scored legitimate clusters, `docs/GRAPH_BENCHMARK_FULL.md` §5).
+Whether this graph capability adds value beyond transaction-level ML —
+the actual question motivating all of Phase 3 — is answered in
+`docs/ML_GRAPH_ABLATION.md`.

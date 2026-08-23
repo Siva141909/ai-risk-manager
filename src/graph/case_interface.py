@@ -1,67 +1,128 @@
-"""Phase 2J — ML/graph interface (schema only).
+"""Phase 2J/3F — ML/graph case interface.
 
-Per the approved Phase 2 architecture, ML risk scoring and graph ring
-detection are NOT combined into one flow yet — this module only defines
-the interface the next phase will consume: for a scored transaction, the
-risk score/tier plus the entity identifiers and graph lookup keys needed
-to later join into the multi-attribute graph
-(device + IP + bank_account, per Phase 1.5's `docs/GRAPH_BENCHMARK.md`
-recommendation).
+**Strict separation, enforced by type:** `Case` (PRODUCTION CASE DATA) is
+what the future investigation agent will eventually see — it contains
+ZERO synthetic ground-truth information, by construction (no field on
+the dataclass could hold it). `CaseGroundTruth` (EVALUATION-ONLY) is a
+completely separate object, built separately, used only by the Phase
+3H/3I/3J evaluation scripts. There is no code path that merges them into
+one object — this is a structural guarantee, not just a convention
+(tested, `tests/unit/test_case_interface_leakage.py`).
 
-**Graph labels stay hidden from the ML model, always.** `CaseRecord` is
-built by combining (a) the ML model's OWN output (risk_score, risk_tier
-— computed from features that never included any synthetic/graph
-column, src/features/leakage_guard.py) with (b) identifiers read
-directly off the original transaction row — never anything derived
-from or influenced by the model.
+**Real-time vs. retrospective (Phase 3L):** `ml_risk_score`/`ml_risk_tier`
+are REAL-TIME features — computed from `src/features/` at transaction
+time, using only strictly-past data (Phase 2's leak-safe historical
+features). `graph_evidence` is RETROSPECTIVE INVESTIGATION evidence —
+computed from `src/graph/signals.py` against the FULL graph (all
+transactions, all times), so it may include relationships formed by
+transactions that happened AFTER the trigger transaction. This is
+appropriate for case investigation (an analyst benefits from the
+complete picture) but `graph_evidence` must never be fed into
+`src/features/` as if it were known at transaction time.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
 
 @dataclass(frozen=True)
-class CaseRecord:
-    transaction_id: int
-    risk_score: float
-    risk_tier: str  # LOW / MEDIUM / HIGH / CRITICAL — from src/models/thresholds.py, deterministic
+class GraphEvidence:
+    """Deterministic, human-readable structural evidence (Phase 3G/3K) —
+    no LLM involved in producing any field here."""
+
+    community_id: int
+    community_size: int
+    n_shared_devices: int
+    n_shared_ips: int
+    n_shared_bank_accounts: int
+    multi_attribute_overlap: bool
+    relationship_rarity_score: float
+    temporal_concentration_hours: float | None
+    detected_relationship_types: list[str]
+    narrative: str  # deterministic human-readable sentence, src/graph/explain.py
+
+
+@dataclass(frozen=True)
+class Case:
+    """PRODUCTION CASE DATA — what the agent (Phase 4+) will eventually
+    receive. No ground-truth field exists on this class."""
+
+    case_id: str
+    trigger_transaction_ids: list[int]
+    trigger_transaction_dt: int  # real TransactionDT of the (first) trigger transaction — reproducible, not wall-clock
+    ml_risk_score: float
+    ml_risk_tier: str
     customer_proxy_id: str
     customer_proxy_confidence: str
-    payment_instrument_proxy_id: str
-    graph_lookup_keys: dict[str, str | None]  # device/ip/bank_account synthetic IDs — for Phase 3's graph join
+    graph_lookup_keys: dict[str, str | None]
+    graph_evidence: GraphEvidence | None  # None if this customer shares nothing with anyone
 
 
-def build_case_record(transaction_row: pd.Series, risk_score: float, risk_tier: str) -> CaseRecord:
-    """transaction_row: one row of the full feature-pipeline output
-    (src/features/pipeline.py's artifact.df) — has the synthetic entity
-    columns available for lookup purposes even though they were never
-    part of the model's feature matrix.
+@dataclass(frozen=True)
+class CaseGroundTruth:
+    """EVALUATION-ONLY — never constructed alongside a Case in the same
+    code path that would hand data to an agent. Used exclusively by
+    Phase 3H/3I/3J evaluation scripts."""
+
+    case_id: str
+    original_isFraud: int
+    synthetic_ring_id: str | None
+    synthetic_abuse_type: str | None
+    synthetic_ring_role: str | None
+    legitimate_cluster_id: str | None
+    legitimate_cluster_type: str | None
+    synthetic_entity_label: str
+
+
+def build_case_ground_truth(case_id: str, ground_truth_row: pd.Series) -> CaseGroundTruth:
+    """ground_truth_row: a row from the synthetic-generator output
+    (data/synthetic/full/transactions.parquet), NEVER from a feature
+    matrix an agent would see."""
+
+    def _get(col: str):
+        val = ground_truth_row.get(col)
+        return None if pd.isna(val) else val
+
+    return CaseGroundTruth(
+        case_id=case_id,
+        original_isFraud=int(ground_truth_row["original_isFraud"]),
+        synthetic_ring_id=_get("synthetic_ring_id"),
+        synthetic_abuse_type=_get("synthetic_abuse_type"),
+        synthetic_ring_role=_get("synthetic_ring_role"),
+        legitimate_cluster_id=_get("legitimate_cluster_id"),
+        legitimate_cluster_type=_get("legitimate_cluster_type"),
+        synthetic_entity_label=str(ground_truth_row["synthetic_entity_label"]),
+    )
+
+
+def build_case(
+    transaction_row: pd.Series,
+    ml_risk_score: float,
+    ml_risk_tier: str,
+    graph_evidence: GraphEvidence | None,
+) -> Case:
+    """transaction_row: a row carrying real + derived-proxy + synthetic
+    LOOKUP KEY columns (device_synthetic_id etc.) — those key VALUES are
+    fine here (they're graph join keys, not ground-truth labels); the
+    ground-truth LABEL columns (synthetic_ring_id etc.) are never read
+    by this function.
     """
-    return CaseRecord(
-        transaction_id=int(transaction_row["TransactionID"]),
-        risk_score=float(risk_score),
-        risk_tier=risk_tier,
+    txn_id = int(transaction_row["TransactionID"])
+    return Case(
+        case_id=f"CASE-{txn_id}",
+        trigger_transaction_ids=[txn_id],
+        trigger_transaction_dt=int(transaction_row["TransactionDT"]),
+        ml_risk_score=float(ml_risk_score),
+        ml_risk_tier=ml_risk_tier,
         customer_proxy_id=str(transaction_row["customer_proxy_id"]),
         customer_proxy_confidence=str(transaction_row["customer_proxy_confidence"]),
-        payment_instrument_proxy_id=str(transaction_row["payment_instrument_proxy_id"]),
         graph_lookup_keys={
             "device_synthetic_id": transaction_row.get("device_synthetic_id"),
             "ip_synthetic_id": transaction_row.get("ip_synthetic_id"),
             "bank_account_synthetic_id": transaction_row.get("bank_account_synthetic_id"),
         },
+        graph_evidence=graph_evidence,
     )
-
-
-def build_case_records(
-    df: pd.DataFrame, risk_scores: pd.Series, risk_tiers: pd.Series
-) -> list[CaseRecord]:
-    """Batch version — df is the feature-pipeline output (or a slice of
-    it) aligned index-for-index with risk_scores/risk_tiers.
-    """
-    return [
-        build_case_record(row, risk_scores.loc[idx], risk_tiers.loc[idx])
-        for idx, row in df.iterrows()
-    ]

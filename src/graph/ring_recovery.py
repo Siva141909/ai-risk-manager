@@ -1,16 +1,41 @@
-"""Ring recovery benchmark — Phase 1.5, Decision 10.
+"""Ring recovery benchmark — Phase 1.5 Decision 10, extended Phase 3C/3D.
 
 Tests whether a graph representation + community/connected-component
 detection method can recover injected rings, measured as precision/
 recall/F1 against synthetic ground truth. Per Decision 10's instruction,
 this module is run and reported BEFORE any attempt to tune parameters
-against these numbers — see docs/GRAPH_BENCHMARK.md.
+against these numbers — see docs/GRAPH_BENCHMARK.md and
+docs/GRAPH_BENCHMARK_FULL.md.
 """
 
 from __future__ import annotations
 
+import math
+
 import networkx as nx
 import pandas as pd
+
+
+def wilson_confidence_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion — appropriate
+    here because ring counts are small (a handful of rings/clusters per
+    type), where a normal approximation would be unreliable or produce
+    out-of-[0,1] bounds."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denom = 1 + z**2 / n
+    center = (p + z**2 / (2 * n)) / denom
+    half_width = (z * math.sqrt((p * (1 - p) + z**2 / (4 * n)) / n)) / denom
+    return (round(max(0.0, center - half_width), 4), round(min(1.0, center + half_width), 4))
+
+
+def categorize_recovery(result: dict) -> str:
+    if "note" in result or result.get("recall", 0) == 0:
+        return "missed"
+    if result["recall"] >= 1.0:
+        return "full"
+    return "partial"
 
 
 def detect_communities(g: nx.Graph, method: str = "louvain", seed: int = 42) -> dict[str, int]:
@@ -126,17 +151,41 @@ def evaluate_legitimate_false_positives(
 
 def summarize_ring_recovery(results: list[dict]) -> dict:
     scored = [r for r in results if "note" not in r]
-    missed = [r for r in results if "note" in r or r.get("recall", 0) == 0]
+    categories = [categorize_recovery(r) for r in results]
+    n_missed = categories.count("missed")
+    n_partial = categories.count("partial")
+    n_full = categories.count("full")
+
     if not scored:
-        return {"n_rings": len(results), "n_scored": 0, "mean_precision": None, "mean_recall": None, "mean_f1": None}
+        return {
+            "n_rings": len(results), "n_scored": 0, "n_missed": n_missed,
+            "n_partial": n_partial, "n_full": n_full,
+            "mean_precision": None, "mean_recall": None, "mean_f1": None,
+        }
+
+    total_tp = sum(r.get("true_positives", 0) for r in scored)
+    total_detected = sum(r.get("detected_size", 0) for r in scored)
+    total_true = sum(r.get("true_size", 0) for r in scored)
+
     return {
         "n_rings": len(results),
         "n_scored": len(scored),
-        "n_missed_entirely": len(missed),
+        "n_missed": n_missed,
+        "n_partial": n_partial,
+        "n_full": n_full,
         "mean_precision": round(sum(r["precision"] for r in scored) / len(scored), 4),
         "mean_recall": round(sum(r["recall"] for r in scored) / len(scored), 4),
         "mean_f1": round(sum(r["f1"] for r in scored) / len(scored), 4),
+        "pooled_precision_95ci": wilson_confidence_interval(total_tp, total_detected) if total_detected else None,
+        "pooled_recall_95ci": wilson_confidence_interval(total_tp, total_true) if total_true else None,
+        "missed_ring_ids": [r["ring_id"] for r, c in zip(results, categories) if c == "missed"],
+        "partial_ring_ids": [r["ring_id"] for r, c in zip(results, categories) if c == "partial"],
     }
+
+
+def summarize_ring_recovery_by_abuse_type(results: list[dict]) -> dict:
+    abuse_types = sorted({r["abuse_type"] for r in results})
+    return {at: summarize_ring_recovery([r for r in results if r["abuse_type"] == at]) for at in abuse_types}
 
 
 def summarize_false_positives(results: list[dict]) -> dict:
@@ -147,4 +196,10 @@ def summarize_false_positives(results: list[dict]) -> dict:
         "n_scored": len(scored),
         "n_false_positive": n_fp,
         "false_positive_rate": round(n_fp / len(scored), 4) if scored else None,
+        "false_positive_rate_95ci": wilson_confidence_interval(n_fp, len(scored)) if scored else None,
     }
+
+
+def summarize_false_positives_by_cluster_type(results: list[dict]) -> dict:
+    cluster_types = sorted({r["cluster_type"] for r in results})
+    return {ct: summarize_false_positives([r for r in results if r["cluster_type"] == ct]) for ct in cluster_types}

@@ -1,4 +1,29 @@
-# Entity Model — Phase 1B/1C
+# Entity Model — Phase 1B/1C (Phase 1.5 Decision 8 confirmation added)
+
+**Phase 1.5 update:** Decision 8 required re-verifying `customer_proxy`'s
+cardinality/singleton rate/mega-cluster rate/temporal persistence "under
+the corrected localized graph model." Verified and confirmed
+**unaffected** — `src/generator/customer_proxy.py` resolves
+`customer_proxy_id`/`payment_instrument_proxy_id` purely from real
+`train_transaction.csv` columns (`card1`-`card6`, `addr1`,
+`P_emaildomain`), computed *before* any synthetic entity assignment runs
+at all. Phase 1.5's corrections (localized communities replacing uniform
+pooling, hub-entity exclusion from graph topology) touch only the
+synthetic device/IP/bank_account/address layer — they cannot and do not
+change this resolution. Re-ran it directly against the current dev
+sample as a check, not just an assertion: recomputing
+`resolve_customer_proxy` on `data/synthetic/dev/transactions.csv`
+reproduced the exact `customer_proxy_id` column already stored there,
+byte for byte. **No change; no issue found; §3's decision stands
+unmodified.** Additionally: Decision 2's graph-benchmark work
+(`docs/GRAPH_BENCHMARK.md`) surfaced a related, separate finding worth
+recording here — `payment_instrument_proxy` (§1 table below) is not only
+a coarser proxy than `customer_proxy` on paper, it also empirically acts
+as a **hub node** that reintroduces graph percolation even under the
+corrected localized model (a 30,278-node component collapsed to 2,001
+once it was excluded) — it is now excluded from all ring-detection graph
+topology, same as `merchant_proxy`/`email_domain_proxy` (see
+`docs/GRAPH_BENCHMARK.md` §3).
 
 **These entities are not real Razorpay identities.** Every entity below is
 either (a) a real IEEE-CIS column used as-is, (b) a **derived proxy**
@@ -15,9 +40,9 @@ all. Code and downstream docs must always carry this distinction — see
 |---|---|---|---|---|---|
 | `transaction` | `TransactionID` (as-is) | `train_transaction.csv` | **REAL** | 590,540 (unique, verified) | None — this is the one entity with no ambiguity |
 | `customer_proxy` | `card1\|card2\|card3\|card4\|card5\|card6\|addr1\|P_emaildomain`, individualized above 500-row clusters (`src/generator/customer_proxy.py`) | Derived from `train_transaction.csv` columns | **DERIVED PROXY** (confidence-tiered) | 156,316 distinct IDs; tier breakdown: singleton 46,609 rows / small 311,418 / large_low_confidence 171,010 / mega_unresolved 61,503 (individualized, not merged) | See §3 — no candidate tested is a clean 1:1 customer identity; this is the least-misleading of 7 tested, not a validated one |
-| `payment_instrument_proxy` | `card1\|card2\|card3\|card4\|card5\|card6`, individualized above 500-row clusters | Derived from `train_transaction.csv` card columns | **DERIVED PROXY** (confidence-tiered) | 354,955 distinct IDs; tier breakdown: singleton 4,103 / small 94,182 / large_low_confidence 151,996 / **mega_unresolved 340,259 (57.6% of all rows)** | Narrower field set than `customer_proxy` → even coarser; explicitly NOT a customer identity, represents "same card used" only, and even that claim is unsafe for the majority of rows (see §3, candidate A) |
-| `merchant_proxy` | `ProductCD` (as-is, 5 categories) | `train_transaction.csv` | **DERIVED PROXY** (category-level only) | 5 | Cannot represent individual merchant identity — this is a product-category label, not a merchant; design doc Section 7 already scopes this correctly |
-| `email_domain_proxy` | `P_emaildomain` / `R_emaildomain` (as-is) | `train_transaction.csv` | **DERIVED PROXY** (genuinely real field, coarse by nature) | 59 (`P_emaildomain`) / 60 (`R_emaildomain`) | Domain-level only — many unrelated people share `gmail.com`; must always be combined with other signals before treated as a ring-forming edge (same caution the design doc Section 4 Q8 already applies to shared IPs) |
+| `payment_instrument_proxy` | `card1\|card2\|card3\|card4\|card5\|card6`, individualized above 500-row clusters | Derived from `train_transaction.csv` card columns | **DERIVED PROXY** (confidence-tiered) | 354,955 distinct IDs; tier breakdown: singleton 4,103 / small 94,182 / large_low_confidence 151,996 / **mega_unresolved 340,259 (57.6% of all rows)** | Narrower field set than `customer_proxy` → even coarser; explicitly NOT a customer identity, represents "same card used" only, and even that claim is unsafe for the majority of rows (see §3, candidate A). **Phase 1.5 addition:** empirically confirmed as a graph-topology HUB (`docs/GRAPH_BENCHMARK.md` §3) — excluded from all ring-detection graph views, same as `merchant_proxy`/`email_domain_proxy`; remains available as an ML feature / investigation attribute only |
+| `merchant_proxy` | `ProductCD` (as-is, 5 categories) | `train_transaction.csv` | **DERIVED PROXY** (category-level only) | 5 | Cannot represent individual merchant identity — this is a product-category label, not a merchant; design doc Section 7 already scopes this correctly. **Excluded from ring-detection graph topology** (Phase 1.5 Decision 2) — contextual/ML feature use only |
+| `email_domain_proxy` | `P_emaildomain` / `R_emaildomain` (as-is) | `train_transaction.csv` | **DERIVED PROXY** (genuinely real field, coarse by nature) | 59 (`P_emaildomain`) / 60 (`R_emaildomain`) | Domain-level only — many unrelated people share `gmail.com`; must always be combined with other signals before treated as a ring-forming edge (same caution the design doc Section 4 Q8 already applies to shared IPs). **Excluded from ring-detection graph topology** (Phase 1.5 Decision 2) — contextual/ML feature use only |
 | `device_synthetic` | Generated (`src/generator/device.py`) | No real basis | **SYNTHETIC** | Configurable via `configs/generator.yaml` (see `docs/SYNTHETIC_DATA_GENERATION.md`) | Confirmed by `docs/DATASET_AUDIT.md` §9: real `DeviceInfo` is dominated by OS/browser-family labels (`Windows` = 47,722 rows), not device fingerprints — cannot anchor real device identity, so this entity carries zero real signal by design, matching the design doc's existing Section 7 choice |
 | `ip_synthetic` | Generated (`src/generator/ip.py`) | No real basis | **SYNTHETIC** | Configurable | No IP field exists anywhere in IEEE-CIS (confirmed, `docs/DATASET_AUDIT.md` §14) — 100% synthetic by necessity, not choice |
 | `bank_account_synthetic` | Generated (`src/generator/bank_account.py`) | No real basis | **SYNTHETIC** | Configurable | No settlement/bank-account field exists anywhere in IEEE-CIS (confirmed) — 100% synthetic by necessity |

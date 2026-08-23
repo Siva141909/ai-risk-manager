@@ -1,26 +1,52 @@
-# Phase 1D-1G synthetic generator configuration.
+# Phase 1.5 synthetic generator configuration.
 # Values here are illustrative defaults matching src/generator/*.py's
-# built-in defaults (GeneratorConfig / PoolRatios / DEFAULT_CLUSTER_TYPES /
+# built-in defaults (LeakageConfig / DEFAULT_CLUSTER_TYPES /
 # DEFAULT_RING_TYPES) — kept here for visibility/documentation and so a
 # future run can override without editing code. The seed itself comes
 # from configs/seed.yaml, not duplicated here.
+#
+# Superseded (Phase 1): a `pool_ratios` block controlling uniform
+# population-wide pooling. Replaced (Phase 1.5, Decision 1) after
+# docs/GRAPH_DATA_MODEL.md's Finding 1 showed that model percolates the
+# graph into one giant component regardless of ratio. See
+# docs/SYNTHETIC_DATA_GENERATION.md and docs/GRAPH_BENCHMARK.md.
 
 dev_sample:
   n_transactions: 20000
 
-pool_ratios:
-  # ambient (non-narrative) synthetic-infra sharing rate per entity type —
-  # smaller ratio = more background collision. See docs/SYNTHETIC_DATA_GENERATION.md.
-  device: 0.75
-  ip: 0.55
-  bank_account: 0.95
-  address: 0.65
+# Rare, bounded cross-population coincidence — an absolute target count
+# of expected leaking customers (not a percentage), so the expected
+# leakage stays constant regardless of population size.
+leakage:
+  device: {target_leak_count: 15, pool_size: 8}
+  ip: {target_leak_count: 25, pool_size: 12}
+  bank_account: {target_leak_count: 8, pool_size: 5}
+  address: {target_leak_count: 15, pool_size: 8}
 
+# Primary sharing mechanism: localized communities, per-attribute
+# sharing probability rolled once per cluster instance.
 legitimate_clusters:
-  household: {count: 15, size_min: 2, size_max: 5, share: [device, ip, address]}
-  office: {count: 6, size_min: 5, size_max: 15, share: [ip]}
-  campus: {count: 2, size_min: 20, size_max: 60, share: [ip_range]}
-  business: {count: 5, size_min: 3, size_max: 8, share: [address]}
+  household:
+    count: 60
+    size_min: 2
+    size_max: 5
+    share_prob: {device: 0.4, ip: 0.5, address: 0.85, bank_account: 0.15}
+  office:
+    count: 20
+    size_min: 5
+    size_max: 15
+    share_prob: {device: 0.15, ip: 0.8, address: 0.0, bank_account: 0.0}
+  campus:
+    count: 5
+    size_min: 20
+    size_max: 60
+    share_prob: {device: 0.05, ip: 0.0, address: 0.0, bank_account: 0.0}
+    ip_range_share_prob: 0.9
+  business:
+    count: 15
+    size_min: 3
+    size_max: 8
+    share_prob: {device: 0.35, ip: 0.45, address: 0.55, bank_account: 0.1}
 
 rings:
   shared_device:
@@ -45,3 +71,14 @@ rings:
     amount_pattern: near_identical
     noise_ratio: 0.15
   decoy_attach_probability: 0.3
+  # Decoys are preferentially sourced from legitimate_cluster members
+  # (Decision 5) — see src/generator/rings.py.
+
+# Ring-detection graph strategy (Decision 3/4/11): use the multi-attribute
+# combined view (device+ip+bank_account, hub entities excluded) as
+# primary; single-relationship views for per-attribute evidence. See
+# docs/GRAPH_BENCHMARK.md for the empirical comparison behind this choice.
+graph:
+  hub_entity_types_excluded_from_topology: [merchant_proxy, email_domain_proxy, payment_instrument_proxy]
+  primary_ring_detection_view: multi_attribute
+  weighting_strategy: flat  # inverse_frequency tested equivalent at dev scale — see docs/GRAPH_BENCHMARK.md §11

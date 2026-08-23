@@ -1,11 +1,16 @@
-"""Entity assignment — Phase 1D orchestration.
+"""Entity assignment — corrected ambient layer (Phase 1.5, Decision 1).
 
-Computes customer_proxy / payment_instrument_proxy (Phase 1C) and the
-ambient (non-narrative) base synthetic infrastructure (device/ip/
-bank_account/address) for every transaction. This is the "before any
-story is injected" layer — realistic background collision only, from
-pool pressure (src/generator/pools.py). Phase 1E (legitimate clusters)
-and Phase 1F (rings) then override specific rows on top of this base.
+Computes customer_proxy / payment_instrument_proxy (Phase 1C, UNCHANGED —
+Decision 8 keeps this proxy definition) and a mostly-INDIVIDUAL ambient
+synthetic infrastructure baseline (device/ip/bank_account/address) with
+only rare, bounded cross-population leakage. This replaces Phase 1's
+uniform-pooling ambient layer, which `docs/GRAPH_DATA_MODEL.md` Finding 1
+showed percolates the whole graph into one giant connected component
+regardless of how tight the pool ratio was pushed.
+
+`src/generator/legitimate_clusters.py` (household/office/campus/business)
+is now the PRIMARY source of deliberate sharing, applied on top of this
+individual baseline — this module's job is deliberately narrow.
 """
 
 from __future__ import annotations
@@ -22,15 +27,38 @@ from src.generator.ip import assign_base_ips
 
 
 @dataclass(frozen=True)
-class PoolRatios:
-    device: float = 0.75
-    ip: float = 0.55
-    bank_account: float = 0.95
-    address: float = 0.65
+class LeakageConfig:
+    """Rare, bounded cross-population coincidence, per entity type.
+
+    Specified as a TARGET EXPECTED COUNT of customers who leak (not a
+    percentage) — a first attempt at this used a flat probability
+    (e.g. 3-5%), which for the dev sample's ~11,500-20,000 customers still
+    meant hundreds of people drawing from a small fixed pool, which
+    itself birthday-paradox-collided into a smaller percolating clump
+    (measured: a ~2,000-node component even after excluding all hub
+    entity types). Using an absolute target count and deriving
+    `leakage_prob = target_leak_count / n_customers` at call time keeps
+    the EXPECTED number of leaking customers constant regardless of
+    population size, which is what actually prevents percolation — see
+    docs/GRAPH_BENCHMARK.md.
+    """
+
+    device_target_leak_count: int = 15
+    device_leakage_pool_size: int = 8
+    ip_target_leak_count: int = 25
+    ip_leakage_pool_size: int = 12
+    bank_account_target_leak_count: int = 8
+    bank_account_leakage_pool_size: int = 5
+    address_target_leak_count: int = 15
+    address_leakage_pool_size: int = 8
 
 
-def assign_entities(df: pd.DataFrame, seed: int, pool_ratios: PoolRatios = PoolRatios()) -> pd.DataFrame:
-    """Return a copy of df with proxy + base synthetic entity columns added.
+def _leak_prob(target_count: int, n_customers: int) -> float:
+    return min(1.0, target_count / n_customers) if n_customers > 0 else 0.0
+
+
+def assign_entities(df: pd.DataFrame, seed: int, leakage: LeakageConfig = LeakageConfig()) -> pd.DataFrame:
+    """Return a copy of df with proxy + ambient synthetic entity columns added.
 
     Required input columns: TransactionID, card1-card6, addr1,
     P_emaildomain, TransactionDT, TransactionAmt, isFraud.
@@ -52,18 +80,27 @@ def assign_entities(df: pd.DataFrame, seed: int, pool_ratios: PoolRatios = PoolR
     out["payment_instrument_proxy_id"] = pi_id
     out["payment_instrument_proxy_confidence"] = pi_conf
 
-    # Base synthetic infra is assigned PER customer_proxy_id (one "home"
-    # device/ip/bank_account/address per proxy, realistic pool collisions),
-    # then broadcast to every transaction belonging to that proxy.
     unique_proxies = pd.Series(out["customer_proxy_id"].unique(), name="customer_proxy_id")
+    n = len(unique_proxies)
 
-    devices = assign_base_devices(unique_proxies, seed, pool_ratios.device)
+    devices = assign_base_devices(
+        unique_proxies, seed, _leak_prob(leakage.device_target_leak_count, n), leakage.device_leakage_pool_size
+    )
     devices["customer_proxy_id"] = unique_proxies.values
-    ips = assign_base_ips(unique_proxies, seed, pool_ratios.ip)
+    ips = assign_base_ips(
+        unique_proxies, seed, _leak_prob(leakage.ip_target_leak_count, n), leakage.ip_leakage_pool_size
+    )
     ips["customer_proxy_id"] = unique_proxies.values
-    banks = assign_base_bank_accounts(unique_proxies, seed, pool_ratios.bank_account)
+    banks = assign_base_bank_accounts(
+        unique_proxies,
+        seed,
+        _leak_prob(leakage.bank_account_target_leak_count, n),
+        leakage.bank_account_leakage_pool_size,
+    )
     banks["customer_proxy_id"] = unique_proxies.values
-    addresses = assign_base_addresses(unique_proxies, seed, pool_ratios.address)
+    addresses = assign_base_addresses(
+        unique_proxies, seed, _leak_prob(leakage.address_target_leak_count, n), leakage.address_leakage_pool_size
+    )
     addresses["customer_proxy_id"] = unique_proxies.values
 
     for entity_df in (devices, ips, banks, addresses):

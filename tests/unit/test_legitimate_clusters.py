@@ -32,15 +32,21 @@ def _toy_transactions(n_customers: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_household_cluster_shares_device_ip_and_address():
+def test_household_cluster_shares_device_ip_and_address_when_probability_is_one():
     df = _toy_transactions(50)
     assigned = assign_entities(df, seed=42)
-    cluster_types = (ClusterTypeConfig("household", count=1, size_min=4, size_max=4, share=("device", "ip", "address")),)
+    cluster_types = (
+        ClusterTypeConfig(
+            "household", count=1, size_min=4, size_max=4,
+            share_prob={"device": 1.0, "ip": 1.0, "address": 1.0, "bank_account": 0.0},
+        ),
+    )
     out, records = inject_legitimate_clusters(assigned, seed=42, cluster_types=cluster_types)
 
     assert len(records) == 1
     members = records[0]["members"]
     assert len(members) == 4
+    assert set(records[0]["shared_attributes"]) == {"device", "ip", "address"}
     sub = out[out["customer_proxy_id"].isin(members)]
     assert sub["device_synthetic_id"].nunique() == 1
     assert sub["ip_synthetic_id"].nunique() == 1
@@ -48,10 +54,34 @@ def test_household_cluster_shares_device_ip_and_address():
     assert (sub["legitimate_cluster_type"] == "household").all()
 
 
+def test_household_cluster_shares_nothing_when_probability_is_zero():
+    df = _toy_transactions(50)
+    assigned = assign_entities(df, seed=42)
+    cluster_types = (
+        ClusterTypeConfig(
+            "household", count=1, size_min=4, size_max=4,
+            share_prob={"device": 0.0, "ip": 0.0, "address": 0.0, "bank_account": 0.0},
+        ),
+    )
+    out, records = inject_legitimate_clusters(assigned, seed=42, cluster_types=cluster_types)
+    assert records[0]["shared_attributes"] == []
+    members = records[0]["members"]
+    sub = out[out["customer_proxy_id"].isin(members)]
+    # still a labeled legitimate cluster, just with no shared attribute this instance
+    assert (sub["legitimate_cluster_type"] == "household").all()
+    assert sub["device_synthetic_id"].nunique() == len(members)  # each kept their individual device
+
+
 def test_campus_cluster_shares_range_not_exact_ip():
     df = _toy_transactions(100)
     assigned = assign_entities(df, seed=42)
-    cluster_types = (ClusterTypeConfig("campus", count=1, size_min=20, size_max=20, share=("ip_range",)),)
+    cluster_types = (
+        ClusterTypeConfig(
+            "campus", count=1, size_min=20, size_max=20,
+            share_prob={"device": 0.0, "ip": 0.0, "address": 0.0, "bank_account": 0.0},
+            ip_range_share_prob=1.0,
+        ),
+    )
     out, records = inject_legitimate_clusters(assigned, seed=42, cluster_types=cluster_types)
 
     members = records[0]["members"]
@@ -82,6 +112,12 @@ def test_deterministic_across_runs():
 def test_skips_cluster_type_when_not_enough_candidates():
     df = _toy_transactions(5)  # too few for a 20-60 member campus
     assigned = assign_entities(df, seed=42)
-    cluster_types = (ClusterTypeConfig("campus", count=1, size_min=20, size_max=60, share=("ip_range",)),)
+    cluster_types = (
+        ClusterTypeConfig(
+            "campus", count=1, size_min=20, size_max=60,
+            share_prob={"device": 0.0, "ip": 0.0, "address": 0.0, "bank_account": 0.0},
+            ip_range_share_prob=1.0,
+        ),
+    )
     out, records = inject_legitimate_clusters(assigned, seed=42, cluster_types=cluster_types)
     assert records == []  # gracefully skipped, not an error

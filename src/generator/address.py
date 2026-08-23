@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.generator.pools import assign_pooled_slot
+from src.generator.pools import assign_individual_or_leaked_slot
 from src.generator.rng import rng_for
 
 # Illustrative Indian PIN code first-digit-to-region bucket (real PIN
@@ -32,11 +32,15 @@ def mint_pincode(seed: int, slot: str) -> str:
     return f"{zone}{rest:05d}"
 
 
-def assign_base_addresses(customer_proxy_ids: pd.Series, seed: int, pool_ratio: float) -> pd.DataFrame:
-    """Ambient (non-narrative) address assignment: one 'home address' per
-    customer_proxy_id, with realistic pool-driven collisions (household sharing).
+def assign_base_addresses(
+    customer_proxy_ids: pd.Series, seed: int, leakage_prob: float, leakage_pool_size: int
+) -> pd.DataFrame:
+    """Ambient (non-narrative) address assignment: mostly one UNIQUE 'home
+    address' per customer_proxy_id, with rare bounded leakage. Deliberate
+    household/business address sharing comes from
+    src/generator/legitimate_clusters.py, not from here.
     """
-    slots = assign_pooled_slot(customer_proxy_ids, seed, "address", pool_ratio)
+    slots = assign_individual_or_leaked_slot(customer_proxy_ids, seed, "address", leakage_prob, leakage_pool_size)
     address_ids = slots.map(lambda s: mint_address_id(seed, s))
     pincodes = slots.map(lambda s: mint_pincode(seed, s))
     return pd.DataFrame(

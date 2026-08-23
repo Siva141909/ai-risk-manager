@@ -21,6 +21,15 @@ customer_proxy entities are attached to the ring's shared synthetic
 attribute value as innocent bystanders — NOT labeled as ring members.
 This is what forces "shared attribute" to be insufficient evidence on
 its own, per Phase 1F's brief.
+
+Phase 1.5, Decision 5: decoys are now preferentially sourced from
+`legitimate_cluster_members` (household/office/campus/business members)
+rather than an arbitrary unaffiliated customer — a bystander who
+coincidentally shares the ring's device/IP/bank account plausibly has
+their OWN legitimate context (they're also, say, a household member),
+which is a more realistic "innocent bystander" story than a customer
+with no other structure at all. Falls back to the general unaffiliated
+eligible pool if no legitimate-cluster candidates remain.
 """
 
 from __future__ import annotations
@@ -105,6 +114,7 @@ def inject_rings(
     ring_types: tuple[RingTypeConfig, ...] = DEFAULT_RING_TYPES,
     decoy_attach_probability: float = 0.3,
     already_used: set[str] | None = None,
+    legitimate_cluster_members: set[str] | None = None,
 ) -> tuple[pd.DataFrame, list[dict], set[str]]:
     out = df.copy()
     out["synthetic_ring_id"] = pd.NA
@@ -112,6 +122,8 @@ def inject_rings(
     out["synthetic_ring_role"] = pd.NA  # "core_member" | "noise_member" | "decoy_bystander"
 
     used: set[str] = set(already_used) if already_used else set()
+    decoy_preferred_pool = sorted(set(legitimate_cluster_members or set()))
+    decoy_used: set[str] = set()
     records: list[dict] = []
 
     for rt in ring_types:
@@ -166,12 +178,19 @@ def inject_rings(
 
             decoys: list[str] = []
             if shared_values and rng.random() < decoy_attach_probability:
-                remaining = [p for p in eligible_ids if p not in used]
-                if remaining:
-                    n_decoys = min(int(rng.integers(1, 3)), len(remaining))
-                    pos = sorted(rng.choice(len(remaining), size=n_decoys, replace=False).tolist())
-                    decoys = [remaining[j] for j in pos]
-                    used.update(decoys)
+                preferred = [p for p in decoy_preferred_pool if p not in decoy_used]
+                general = [p for p in eligible_ids if p not in used and p not in decoy_used]
+                pool = preferred if preferred else general
+                if pool:
+                    n_decoys = min(int(rng.integers(1, 3)), len(pool))
+                    pos = sorted(rng.choice(len(pool), size=n_decoys, replace=False).tolist())
+                    decoys = [pool[j] for j in pos]
+                    decoy_used.update(decoys)
+                    # A decoy sourced from a legitimate cluster keeps their cluster
+                    # membership (they still legitimately belong there) — only a
+                    # decoy sourced from the general pool is excluded from future
+                    # core/noise selection, since that pool isn't otherwise spoken for.
+                    used.update(d for d in decoys if d not in decoy_preferred_pool)
                     decoy_mask = out["customer_proxy_id"].isin(decoys)
                     for col, val in shared_values.items():
                         out.loc[decoy_mask, col] = val

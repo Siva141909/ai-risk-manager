@@ -24,40 +24,49 @@ composition.
 
 ---
 
-## 2. Ambient (non-narrative) base assignment — Phase 1D
+## 2. Ambient (non-narrative) base assignment — corrected Phase 1.5 model
 
-Before any legitimate-cluster or ring story is injected, every
-`customer_proxy_id` gets one "home" `device_synthetic_id`,
-`ip_synthetic_id`, `bank_account_synthetic_id`, and `address_synthetic_id`,
-assigned via **pooled slot assignment** (`src/generator/pools.py`):
-distinct customer_proxy entities are mapped into a pool sized
-`round(n_distinct * pool_ratio)`, so a ratio below 1.0 guarantees some
-ambient sharing purely from pool pressure — no household/office/campus
-narrative required for this base layer. Configured in
-`configs/generator.yaml`:
+**Superseded (Phase 1):** every `customer_proxy_id` got a "home"
+device/IP/bank_account/address via **uniform pooled slot assignment**
+across the ENTIRE customer population (`pool_size = round(n_distinct *
+pool_ratio)`). `docs/GRAPH_DATA_MODEL.md` Finding 1 showed this
+percolates into one giant connected component regardless of how close
+to 1.0 the ratio was pushed (a mathematical property of multi-channel
+uniform pooling at this population size, not a tunable parameter) —
+Phase 1.5, Decision 1 replaced this mechanism.
 
-| Entity | pool_ratio | Rationale |
-|---|---|---|
-| `device` | 0.75 | Moderate sharing — a device is often used by ~1.3 people on average |
-| `ip` | 0.55 | Heavier sharing — ISP/NAT pooling is common in the real world |
-| `bank_account` | 0.95 | Mostly 1:1, but a small share of legitimate joint accounts |
-| `address` | 0.65 | Household-level sharing |
+**Current model:** `src/generator/legitimate_clusters.py`
+(household/office/campus/business, §3) is now the **primary** source of
+deliberate sharing. The ambient layer
+(`src/generator/entity_assignment.py`, `src/generator/pools.py`) is now
+deliberately narrow: each customer gets a **unique** attribute value
+with high probability, and only a small, **fixed-size** ("leakage pool")
+accounts for rare cross-population coincidence:
 
-**These ratios are illustrative, not empirically calibrated against any
-real-world distribution** — IEEE-CIS provides no ground truth for "how
-many people really share a residential IP." They were chosen to be
-directionally realistic (device/IP shared more than bank accounts), not
-validated. See `docs/GRAPH_DATA_MODEL.md` §4 for a significant
-finding this produced: at dev-sample scale, this pooling model
-percolates into a single giant connected component **regardless of how
-close to 1.0 the ratios are pushed** — this is a mathematical property of
-uniform random pooling across a large population with multiple
-independent sharing channels, not a tunable bug. Flagged as an
-architecture-level item for Phase 2, not silently patched here.
+| Entity | Target expected leaking customers | Leakage pool size | Rationale |
+|---|---|---|---|
+| `device` | 15 | 8 | A handful of coincidental device-model/hotspot overlaps regardless of population size |
+| `ip` | 25 | 12 | IP is the most plausible channel for incidental overlap (public WiFi, ISP NAT) |
+| `bank_account` | 8 | 5 | Rarest incidental overlap — bank accounts are the most individual attribute |
+| `address` | 15 | 8 | Occasional coincidental address reuse (e.g. shared postal drop points) |
+
+**Why an absolute target count, not a percentage — measured, not
+assumed.** A first version of this fix used a flat leakage
+*probability* (e.g. 3–5%). Tested directly: at the dev sample's
+~11,500–20,000 customers, even 3–5% still meant hundreds of people
+drawing from a small fixed pool, which itself birthday-paradox-collided
+into a smaller — but still real — percolating clump (measured: a
+~2,000-node component even after excluding every hub entity type, see
+`docs/GRAPH_BENCHMARK.md` §3). Deriving `leakage_prob =
+target_leak_count / n_customers` at call time
+(`src/generator/entity_assignment.py::_leak_prob`) keeps the EXPECTED
+number of leaking customers constant regardless of population size —
+this is what actually prevents percolation, confirmed empirically after
+the fix (`tests/integration/test_graph_percolation_fixed.py`).
 
 ---
 
-## 3. Legitimate shared-infrastructure clusters — Phase 1E (mandatory)
+## 3. Legitimate shared-infrastructure clusters — corrected Phase 1.5 model (mandatory, primary sharing mechanism)
 
 Four patterns, each restricted to `customer_proxy` entities with ≤3
 transactions in the working dataframe (injecting a shared-infra story
@@ -65,12 +74,27 @@ onto an already-high-volume proxy wouldn't make behavioral sense).
 **None of these get a `synthetic_ring_id` — they are explicitly not
 fraud.**
 
-| Pattern | Shares | Size | Count (config default) | Why legitimate |
+**Phase 1.5 correction (Decisions 1 and 6):** sharing is now
+**probabilistic per attribute, rolled once per cluster instance** (not
+an all-or-nothing category list, and not per member) — a given
+household either shares its device this instance or it doesn't, exactly
+matching "occasional," not "always," per Phase 1.5's "realism over
+convenience" requirement. Counts are also substantially higher than
+Phase 1 (15/6/2/5 → 60/20/5/15) so the false-positive evaluation has
+enough hard negatives to be meaningful.
+
+| Pattern | Share probability per attribute | Size | Count (default) | Why legitimate |
 |---|---|---|---|---|
-| **Household** | device, IP, address (all three) | 2–5 | 15 | A family plausibly shares a phone/laptop, home WiFi, and mailing address — this is the design doc's own canonical false-positive scenario (Section 4, Judge Q&A #7) |
-| **Office** | IP only | 5–15 | 6 | Employees share a corporate NAT egress IP but have distinct devices, addresses, and payment instruments — the design doc's Judge Q&A #8 scenario |
-| **Campus** | IP *range* (not exact IP) | 20–60 | 2 | Members get distinct individual IPs but a shared `/16`-style subnet prefix — models a large shared-infrastructure population (a "whole city sharing an IP range" scenario, Section 14's own example of what must NOT become a false giant ring) |
-| **Business** | address only | 3–8 | 5 | Multiple unrelated customers shipping to/associated with one shared business address (e.g. a corporate procurement account, a PO box) — a real e-commerce pattern uncorrelated with fraud |
+| **Household** | device 40%, IP 50%, address 85%, bank_account 15% | 2–5 | 60 | A family plausibly shares a phone/laptop, home WiFi, and mailing address *some but not all of the time* — the design doc's own canonical false-positive scenario (Section 4, Judge Q&A #7) |
+| **Office** | device 15%, IP 80%, address 0%, bank_account 0% | 5–15 | 20 | Employees share a corporate NAT egress IP but have distinct devices, addresses, and payment instruments — the design doc's Judge Q&A #8 scenario |
+| **Campus** | device 5%, IP-range 90% (exact IP still distinct) | 20–60 | 5 | Members get distinct individual IPs but a shared `/16`-style subnet prefix — models a large shared-infrastructure population (Section 14's "whole city sharing an IP range" example of what must NOT become a false giant ring) |
+| **Business** | device 35%, IP 45%, address 55%, bank_account 10% | 3–8 | 15 | Multiple unrelated customers associated with one shared business context (a shared workstation, a procurement account, a common delivery address) — moderate overlap on several attributes without full coordination |
+
+Every cluster record now carries a `reason` string (visible in
+`data/synthetic/dev/legitimate_clusters.json`) and a `shared_attributes`
+list recording which attributes THIS SPECIFIC instance actually shared —
+since sharing is now probabilistic, two household instances can differ
+in which attributes they ended up sharing.
 
 **Temporal behavior — deliberately NOT engineered.** Unlike rings
 (§4), legitimate clusters do not select participants by time proximity —
@@ -84,10 +108,13 @@ degree in a short window" is the *ring* signature specifically because
 legitimate clusters lack the "short window" part).
 
 **Probability / expected size in the dev dataset (20,000 transactions,
-seed 42, measured, not projected):** all 28 configured clusters (15
-household + 6 office + 2 campus + 5 business) were successfully injected
-— see `data/synthetic/dev/legitimate_clusters.json`. 287 of 20,000
-transactions (1.4%) carry a `legitimate_cluster_id`.
+seed 42, measured, not projected, Phase 1.5 numbers):** all 100
+configured clusters (60 household + 20 office + 5 campus + 15 business)
+were successfully injected — see
+`data/synthetic/dev/legitimate_clusters.json`. 879 of 20,000
+transactions (4.4%) carry a `legitimate_cluster_id` — up from Phase 1's
+287 (1.4%), per Decision 6's "increase legitimate shared-infrastructure
+cases."
 
 ---
 
@@ -125,19 +152,29 @@ infrastructure?"). Verified in
 `tests/unit/test_rings.py::test_noise_members_labeled_but_not_sharing_attribute`.
 
 **Decoys (`decoy_attach_probability`, default 0.3):** with this
-probability, 1–2 unrelated, non-ring `customer_proxy` entities are
-attached to the ring's shared synthetic attribute value — innocent
-bystanders who coincidentally share infrastructure with a ring, **not**
-labeled as ring members (`synthetic_ring_role = "decoy_bystander"`,
-`synthetic_ring_id` stays null). This is what makes "shares an attribute
-with a flagged ring" insufficient evidence on its own — exactly the
-property Phase 1F's brief asked for ("the graph should require actual
-analysis").
+probability, 1–2 non-ring `customer_proxy` entities are attached to the
+ring's shared synthetic attribute value — innocent bystanders who
+coincidentally share infrastructure with a ring, **not** labeled as ring
+members (`synthetic_ring_role = "decoy_bystander"`, `synthetic_ring_id`
+stays null). This is what makes "shares an attribute with a flagged
+ring" insufficient evidence on its own — exactly the property Phase 1F's
+brief asked for ("the graph should require actual analysis").
 
-**Measured in the dev dataset:** 8 of 8 configured rings successfully
-injected (3 shared_device, 3 shared_bank_account, 2 multi_attribute),
-sizes 3–6 (see `data/synthetic/dev/rings.json`). 45 of 20,000
-transactions (0.225%) are ring members; 3 are decoy bystanders.
+**Phase 1.5 correction (Decision 5):** decoys are now **preferentially
+sourced from legitimate-cluster members** (household/office/campus/
+business) rather than an arbitrary unaffiliated customer
+(`src/generator/rings.py`, `decoy_preferred_pool`) — falling back to the
+general unaffiliated pool only if no legitimate-cluster candidates
+remain. A decoy sourced this way keeps their `legitimate_cluster_id`
+(they still legitimately belong to their household/office/etc.) — a
+bystander with their OWN independent legitimate context is a more
+realistic "coincidental overlap" story than a customer with no structure
+at all.
+
+**Measured in the dev dataset (Phase 1.5 numbers):** 8 of 8 configured
+rings successfully injected (3 shared_device, 3 shared_bank_account, 2
+multi_attribute), sizes 3–6 (see `data/synthetic/dev/rings.json`). 43 of
+20,000 transactions (0.215%) are ring members; 4 are decoy bystanders.
 
 ---
 

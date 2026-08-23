@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.generator.pools import assign_pooled_slot
+from src.generator.pools import assign_individual_or_leaked_slot
 from src.generator.rng import rng_for
 
 # Illustrative-only prefixes, not real IFSC codes.
@@ -27,12 +27,17 @@ def mint_ifsc_prefix(seed: int, slot: str) -> str:
     return f"{bank}0{branch_code:04d}"
 
 
-def assign_base_bank_accounts(customer_proxy_ids: pd.Series, seed: int, pool_ratio: float) -> pd.DataFrame:
+def assign_base_bank_accounts(
+    customer_proxy_ids: pd.Series, seed: int, leakage_prob: float, leakage_pool_size: int
+) -> pd.DataFrame:
     """Ambient (non-narrative) bank-account assignment — mostly 1:1 with a
-    customer_proxy (high pool_ratio expected), but some legitimate joint
-    accounts occur from pool pressure, same mechanism as other entities.
+    customer_proxy; rare bounded leakage covers the odd coincidental
+    collision. Deliberate joint accounts come from
+    src/generator/legitimate_clusters.py, not from here.
     """
-    slots = assign_pooled_slot(customer_proxy_ids, seed, "bank_account", pool_ratio)
+    slots = assign_individual_or_leaked_slot(
+        customer_proxy_ids, seed, "bank_account", leakage_prob, leakage_pool_size
+    )
     account_ids = slots.map(lambda s: mint_bank_account_id(seed, s))
     ifsc_prefixes = slots.map(lambda s: mint_ifsc_prefix(seed, s))
     return pd.DataFrame(

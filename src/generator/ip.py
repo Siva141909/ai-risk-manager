@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.generator.pools import assign_pooled_slot
+from src.generator.pools import assign_individual_or_leaked_slot
 from src.generator.rng import rng_for
 
 
@@ -42,12 +42,15 @@ def mint_ip(seed: int, salt: str, fixed_prefix: str | None = None) -> tuple[str,
     return ip, ip_range
 
 
-def assign_base_ips(customer_proxy_ids: pd.Series, seed: int, pool_ratio: float) -> pd.DataFrame:
-    """Ambient (non-narrative) IP assignment: one 'home IP' per
-    customer_proxy_id, with realistic pool-driven collisions (heavier
-    pooling than devices — ISP/NAT sharing is common in the real world).
+def assign_base_ips(
+    customer_proxy_ids: pd.Series, seed: int, leakage_prob: float, leakage_pool_size: int
+) -> pd.DataFrame:
+    """Ambient (non-narrative) IP assignment: mostly one UNIQUE 'home IP'
+    per customer_proxy_id, with rare bounded cross-population leakage
+    (ISP/NAT coincidence) — deliberate sharing (office/campus) comes from
+    src/generator/legitimate_clusters.py, not from here.
     """
-    slots = assign_pooled_slot(customer_proxy_ids, seed, "ip", pool_ratio)
+    slots = assign_individual_or_leaked_slot(customer_proxy_ids, seed, "ip", leakage_prob, leakage_pool_size)
     minted = slots.map(lambda s: mint_ip(seed, s))
     return pd.DataFrame(
         {

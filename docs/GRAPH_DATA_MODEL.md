@@ -1,43 +1,59 @@
-# Graph Data Model — Phase 1I/1J
+# Graph Data Model — Phase 1I/1J (Phase 1.5: Findings 1 & 2 resolved)
 
-NetworkX only (`src/graph/build_graph.py`) — explicitly no Neo4j (design
-doc Section 13: no algorithmic need at this data volume) and no GNN
-(design doc Section 14). This document describes the graph schema and
-reports **diagnostics only** from the dev dataset
-(`data/synthetic/dev/`) — per Phase 1J's instruction, it does **not**
-claim the graph detects fraud. Two of the findings below are material
-and are flagged for an explicit Phase 2 decision, not silently resolved.
+NetworkX only (`src/graph/build_graph.py`,
+`src/graph/relationship_views.py`) — explicitly no Neo4j (design doc
+Section 13) and no GNN (design doc Section 14). This document describes
+the graph schema; **the current ring-detection performance numbers now
+live in `docs/GRAPH_BENCHMARK.md`**, which supersedes this document's
+old §3/§4 diagnostics-only findings with a resolved, measured
+comparison. §3/§4 below are kept as history — both findings they
+describe are now **resolved** in Phase 1.5, not still-open decisions.
 
 ---
 
 ## 1. Schema
 
-**Nodes** (8 types, each tagged `node_type`):
-`customer_proxy`, `payment_instrument_proxy`, `merchant_proxy`,
-`email_domain_proxy`, `synthetic_device`, `synthetic_ip`,
-`synthetic_bank_account`, `synthetic_address`. Node ID format:
-`"{node_type}:{value}"` (e.g. `"synthetic_device:DEV-66516299"`), so a
-value shared by two transactions collapses to the same node rather than
-being duplicated.
+### 1a. Full heterogeneous graph (`src/graph/build_graph.py`) — evidence/context graph
 
-**Edges** — one per (transaction, entity the customer touched) pair,
-directed `customer_proxy → other entity`, carrying:
+**Nodes** (8 types, each tagged `node_type`): `customer_proxy`,
+`payment_instrument_proxy`, `merchant_proxy`, `email_domain_proxy`,
+`synthetic_device`, `synthetic_ip`, `synthetic_bank_account`,
+`synthetic_address`. Node ID format: `"{node_type}:{value}"`.
 
-| Attribute | Meaning |
-|---|---|
-| `relationship_type` | One of `CUSTOMER_USED_PAYMENT_INSTRUMENT`, `CUSTOMER_PAID_MERCHANT`, `CUSTOMER_USED_EMAIL_DOMAIN`, `CUSTOMER_USED_DEVICE`, `CUSTOMER_USED_IP`, `CUSTOMER_USED_BANK_ACCOUNT`, `CUSTOMER_USED_ADDRESS` |
-| `timestamp` | Real `TransactionDT` |
-| `transaction_id` | Real `TransactionID` — the traceability anchor back to the source row |
+**Edges** — one per (transaction, entity touched) pair, directed
+`customer_proxy → other entity`, carrying `relationship_type`,
+`timestamp` (real `TransactionDT`), `transaction_id` (real
+`TransactionID`, the traceability anchor).
 
-A `MultiDiGraph` (not a simple `Graph`) because two customers can be
-connected via more than one relationship type, and each edge must keep
-its own transaction provenance.
+**Phase 1.5 status change: this graph is investigation/ML-feature
+evidence only — it is explicitly NOT used for ring-detection topology.**
+`merchant_proxy`, `email_domain_proxy`, and (newly confirmed,
+`docs/GRAPH_BENCHMARK.md` §3) `payment_instrument_proxy` all act as hub
+nodes that percolate the graph into one giant component regardless of
+the ambient-assignment fix (§3 below). Ring detection now runs on the
+relationship-specific views instead (1b).
+
+### 1b. Relationship-specific projections (`src/graph/relationship_views.py`) — ring-detection graphs
+
+Customer-customer projections, one per relationship type
+(`SHARED_DEVICE`, `SHARED_IP`, `SHARED_BANK_ACCOUNT`), plus a combined
+multi-attribute view. Nodes are bare `customer_proxy_id` values (no
+prefix). An edge exists only if two customers share the same
+`device_synthetic_id` / `ip_synthetic_id` / `bank_account_synthetic_id`
+value; edge attributes: `weight` (see §5), `relationship_type` (or
+`relationship_types` list for the combined view), and `evidence` (the
+shared value(s) and how many customers share each — traceability, same
+principle as the full graph's `transaction_id`).
 
 ---
 
-## 2. Dev-dataset graph statistics (measured, `scripts/graph_sanity_check.py`)
+## 2. Dev-dataset graph statistics (Phase 1.5 model, `data/synthetic/dev/`)
 
-20,000 transactions → **40,037 nodes, 136,799 edges**.
+20,000 transactions → **60,744 nodes, 136,799 edges** (full
+heterogeneous graph — node count rose from Phase 1's 40,037 because the
+corrected ambient model now gives most customers their own unique
+device/IP/bank_account/address instead of pooling them into fewer
+shared nodes; see `docs/SYNTHETIC_DATA_GENERATION.md` §2).
 
 | Node type | Count |
 |---|---|
@@ -45,149 +61,96 @@ its own transaction provenance.
 | `payment_instrument_proxy` | 3,744 |
 | `merchant_proxy` | 5 |
 | `email_domain_proxy` | 58 |
-| `synthetic_device` | 6,331 |
-| `synthetic_ip` | 5,374 |
-| `synthetic_bank_account` | 7,127 |
-| `synthetic_address` | 5,875 |
+| `synthetic_device` | 11,336 |
+| `synthetic_ip` | 11,244 |
+| `synthetic_bank_account` | 11,485 |
+| `synthetic_address` | 11,349 |
 
-Degree distribution: median 3, mean 6.8 (skewed by hub nodes — see §3).
-Highest-degree nodes are `merchant_proxy:W` (14,837), `email_domain_proxy:gmail.com`
-(7,602), `email_domain_proxy:yahoo.com` (3,408) — expected, since these
-have only 5 / 58 distinct values respectively and are touched by nearly
-every transaction.
+Full relationship-specific and multi-attribute view statistics (node/edge
+counts, component counts, degree distributions) are in
+`docs/GRAPH_BENCHMARK.md` §6 and `data/synthetic/dev/graph_benchmark_report.json`.
 
 ---
 
-## 3. Finding 1 (material): the full graph is one giant connected component
+## 3. Finding 1 (Phase 1, RESOLVED in Phase 1.5): the full graph was one giant connected component
 
-**Measured:** `nx.connected_components` on the full undirected graph
-returns **1 component containing all 40,037 nodes.** Raw
-connected-components is therefore **useless for ring detection on this
-graph as constructed** — it cannot distinguish anything.
+**Original finding (Phase 1):** `nx.connected_components` on the full
+graph returned 1 component containing all 40,037 nodes — driven by hub
+nodes (merchant/email) AND independently by uniform ambient pooling
+across the whole customer population (confirmed by testing pool ratios
+up to 0.999 with no improvement).
 
-**Root cause, verified:** two contributing factors.
+**Resolution (Phase 1.5, Decisions 1 and 2), verified:**
+- Decision 1 replaced uniform pooling with mostly-individual assignment
+  plus a small, population-size-independent leakage pool
+  (`docs/SYNTHETIC_DATA_GENERATION.md` §2) and localized
+  household/office/campus/business communities as the primary sharing
+  mechanism (§3 of the same doc).
+- Decision 2 excludes hub entity types from ring-detection topology
+  (§1a above).
+- **Both were necessary — neither alone was sufficient.** Measured: the
+  full heterogeneous graph (hubs included) STILL percolates to 100%
+  even under the corrected Decision-1 ambient model
+  (`docs/GRAPH_BENCHMARK.md` §5). Only once hub entities were also
+  excluded did the largest component drop to ~2,000 of ~55,000 hub-excluded
+  nodes, and the per-relationship views (§1b) show largest components at
+  4–22% of their own (much smaller) sharing-subgraphs, or under 5% of
+  ALL distinct customers (the regression-tested bound,
+  `tests/integration/test_graph_percolation_fixed.py`).
 
-1. `merchant_proxy` (5 values) and `email_domain_proxy` (58 values) are
-   universal hub nodes — nearly every transaction touches one of a
-   handful of merchant/domain nodes, bridging otherwise-unrelated
-   customers instantly. Removing these two node types from the graph
-   reduces it to 7 components, but one component still contains 39,938
-   of 39,939 remaining nodes (99.75%).
-2. **The ambient base pool assignment (Phase 1D, `docs/SYNTHETIC_DATA_GENERATION.md`
-   §2) percolates on its own, independent of the hub nodes.** Tested
-   directly: pushing every pool ratio from the configured
-   0.55–0.95 range up to 0.90–0.999 (i.e., far closer to "everyone gets
-   a unique attribute") **does not shrink the giant component** — it
-   stayed at 40,453–40,865 nodes out of ~40,900 total across the tested
-   ratios, barely changing. This is not a tunable-away artifact: with
-   ~11,500 customer_proxy entities and 4 independent pooled attribute
-   channels, even near-1:1 pooling produces `O(n)` incidental collisions
-   per channel (birthday-paradox scaling), and `O(n)` edges across
-   multiple channels crosses the classical random-graph
-   giant-component threshold (average degree > 1) regardless of how
-   tight any single channel's ratio is.
-
-**Why this matters:** the design doc's Section 14 already anticipated
-exactly this class of problem for a single attribute ("everyone on one
-shared IP is one giant false ring") and mandated Louvain community
-detection specifically to prevent it. This finding shows the effect is
-**stronger and more structural** than that framing suggests — it is not
-one oversized IP-sharing component to split, it is the *entire* graph
-collapsing into one component from the combination of hub nodes and
-uniform ambient pooling across multiple channels simultaneously. Raw
-connected components cannot be a usable first pass at all on a graph
-built this way; some form of community detection (or a restricted
-subgraph, §5) is mandatory, not optional, before any ring signal can be
-extracted.
-
-**Not fixed here — flagged for Phase 2 decision.** Two candidate
-directions, not chosen unilaterally:
-(a) replace uniform population-wide pooling with **localized/clustered**
-ambient assignment (e.g., partition customers into disjoint
-neighborhood groups first, then pool only within each group), which
-would produce graph structure with real locality instead of guaranteed
-percolation; or
-(b) accept that the full mixed-entity graph will always be one component
-at this data density and design ring detection entirely around
-community detection / restricted-subgraph projections (§5) rather than
-connected components. This needs a lead decision, not a default.
+**Status: RESOLVED.** Full numbers: `docs/GRAPH_BENCHMARK.md` §5–6.
 
 ---
 
-## 4. Finding 2 (material): Louvain recovers legitimate clusters far better than single-attribute rings
+## 4. Finding 2 (Phase 1, RESOLVED in Phase 1.5): Louvain didn't recover single-attribute rings on the full graph
 
-**Measured** (`scripts/graph_sanity_check.py` + a targeted check —
-see below): running `networkx.algorithms.community.louvain_communities`
-(seed 42) on the full graph produces **75 communities**, sizes ranging
-11–3,359 (median 291). Checking whether each injected pattern's members
-land in the same community:
+**Original finding (Phase 1):** on the full mixed-entity graph, Louvain
+recovered multi-attribute rings and legitimate clusters (100% of members
+in the same community) but scattered single-attribute ring members
+across 2–5 different communities each — diluted by unrelated structural
+signal (merchant/email/payment-instrument edges, and every OTHER
+ambient attribute a customer had).
 
-| Pattern | Result |
-|---|---|
-| All 6 checked household clusters (device+IP+address, 3 attributes) | **100% — every member in the exact same community**, every time |
-| `RING-MULTI_ATTRIBUTE-000/001` (device+IP+bank_account, 3 attributes) | **100% — every core member in the same community** |
-| `RING-SHARED_DEVICE-000/001/002` (1 attribute) | **Scattered across 3–5 different communities each** — not recovered |
-| `RING-SHARED_BANK_ACCOUNT-000/001/002` (1 attribute) | **Scattered across 2–4 different communities each** — not recovered |
+**Resolution (Phase 1.5, Decision 3), verified:** running ring detection
+on the relationship-specific views instead of the full graph — where the
+signal isn't diluted by unrelated edge types — recovers single-attribute
+rings directly: mean F1 0.760–0.841 across `SHARED_DEVICE`,
+`SHARED_IP`, `SHARED_BANK_ACCOUNT` (`docs/GRAPH_BENCHMARK.md` §9). The
+original hypothesis this finding tested — "multi-attribute sharing is a
+stronger signal than single-attribute sharing" (design doc Section 8) —
+is now confirmed even more sharply: the multi-attribute combined view
+scores highest (F1 0.851, zero false positives).
 
-**Interpretation:** Louvain's modularity optimization is dominated by
-whichever structural signal is strongest for a given node, and a single
-shared-attribute edge among a customer's other ~6 edges
-(payment_instrument, merchant, email, and their 3 *other*,
-non-shared ambient attributes) is often not enough to pull that customer
-into the same community as their ring co-members. Multi-attribute
-sharing (3 simultaneous bonds) is a much stronger pull and is reliably
-recovered.
-
-**This is not a contradiction of the design doc — it is a direct,
-evidence-based confirmation of a hypothesis the design doc already
-stated as a reason to test for it.** Section 8 explicitly designed the
-`shared_attribute` parameter to allow "1 or 2 attributes — sharing 2+ is
-a stronger signal, used to test whether the graph layer weights
-multi-attribute sharing correctly." This dev-dataset run is exactly that
-test, run for real, and the result is: **on the full mixed-entity graph,
-single-attribute rings are not detectable via plain Louvain community
-membership; multi-attribute rings are.** This has a direct implication
-for Phase 2 that needs an explicit decision (§5), not a silent
-assumption that "the graph layer" uniformly works across all three
-threat patterns in Section 4 of the design doc — today it does not, for
-the two single-attribute ring types, on this graph representation.
+**Status: RESOLVED**, with a nuance carried forward: recall for
+single-attribute rings is bounded below 1.0 by the ring generator's own
+`noise_ratio` (deliberately evasive members) — this is correct behavior,
+not a remaining gap. See `docs/GRAPH_BENCHMARK.md` §9.
 
 ---
 
-## 5. Ring / legitimate-cluster overlap (as designed)
+## 5. Edge weighting (Decision 4) — see `docs/GRAPH_BENCHMARK.md` §11
 
-`n_ring_customer_nodes=40`, `n_legitimate_customer_nodes=224`,
-`n_decoy_customer_nodes=3`. One connected component contains a mix of
-ring members and legitimate/decoy entities (expected and by design — the
-whole graph is one component, per §3), confirming that **raw
-connectivity alone cannot separate ring members from innocent
-bystanders** — exactly the property Phase 1F's brief required
-("the graph should require actual analysis"). This is working as
-intended; it is Finding 1 (giant component) and Finding 2 (single-attribute
-rings not Louvain-separable) that need a Phase 2 answer for how analysis
-beyond raw connectivity should actually work.
+Two strategies implemented in `src/graph/relationship_views.py`: `flat`
+(a fixed prior per relationship type — device/bank_account high,
+IP moderate, address moderate/low) and `inverse_frequency` (prior scaled
+by `1/n_sharing`, so a pair sharing an attribute with only 1 other
+customer counts more than a pair sharing it with hundreds). Tested, not
+assumed: at dev-sample scale, both strategies produced identical ring
+recovery results everywhere measured — investigated and explained in
+`docs/GRAPH_BENCHMARK.md` §11 (the corrected model already produces
+small, disconnected components, giving weighting no structural ambiguity
+to resolve). Re-test at full-benchmark scale before Phase 2 commits to
+either strategy for production use.
 
 ---
 
-## 6. Recommendation for Phase 2 (not implemented here)
+## 6. Recommendation for Phase 2
 
-Both findings point toward the same fix direction, offered as an option
-set for the lead to decide, not a decision made here:
-
-1. Build **restricted, single-relationship-type subgraphs** (e.g., a
-   customer-customer projection using only `CUSTOMER_USED_DEVICE` edges)
-   for ring detection, rather than running community detection on the
-   full mixed-entity graph — this would isolate the exact signal Section
-   4's abuse patterns describe (shared device, shared bank account)
-   instead of diluting it with merchant/email/payment-instrument noise.
-2. Revisit the ambient base-pooling model (§3) — localized/clustered
-   assignment instead of uniform population-wide pooling — before
-   scaling this generator to the full 590,540-row benchmark, since a
-   permanently-one-giant-component graph provides no useful ablation
-   signal for "does the graph layer help."
-3. Re-run this same sanity check once either change is made, and compare
-   against these baseline numbers (75 communities, 1 giant component,
-   40/224/3 ring/legit/decoy node counts) to confirm the fix actually
-   changes the structural picture, not just the parameters.
-
-Full machine-readable diagnostics: `data/synthetic/dev/graph_sanity_report.json`.
+Superseded by `docs/GRAPH_BENCHMARK.md` §11's evidence-based
+recommendation: use the multi-attribute combined view (Strategy D) as
+the primary ring-detection graph, keep the single-relationship views for
+per-attribute evidence/explanation, and never fall back to the full
+heterogeneous graph for detection topology. Remaining open items before
+Phase 2 commits further: re-run the weighting comparison and the
+bank-account false-positive rate at full-benchmark scale
+(`docs/GRAPH_BENCHMARK.md` §13).

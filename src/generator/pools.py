@@ -1,15 +1,28 @@
-"""Generic pooled-assignment logic shared by device/ip/bank_account/address generation.
+"""Ambient-sharing assignment logic — corrected model (Phase 1.5, Decision 1).
 
-Phase 1D requirement: synthetic attributes must NOT be perfectly unique —
-realistic populations have collisions (shared household devices, shared
-office IPs) even before any deliberate legitimate-cluster or ring
-narrative is injected. This module produces that *ambient* collision
-rate: entities are assigned to a pool sized smaller than the entity
-count, so some sharing happens purely from pool pressure, at a rate the
-caller controls via `pool_ratio`.
+**Superseded mechanism, kept only as history:** Phase 1 used
+`assign_pooled_slot`, uniform random pooling across the ENTIRE customer
+population (pool_size = n_customers * pool_ratio). `docs/GRAPH_DATA_MODEL.md`
+Finding 1 showed this percolates the whole graph into one giant connected
+component **even at pool_ratio -> 0.999** — a mathematical property of
+uniform pooling across multiple independent channels at this population
+size, not something fixable by raising the ratio.
 
-Deterministic: distinct entity IDs are sorted before assignment so the
-result never depends on input row order, only on (seed, namespace, ids).
+**Corrected model:** ambient (non-narrative) sharing is now
+`assign_individual_or_leaked_slot` — each entity gets a UNIQUE slot with
+high probability, and only a small, FIXED-size (not population-scaled)
+global "leakage pool" accounts for occasional realistic cross-population
+coincidence (the same public hotspot, a popular budget phone model,
+etc.), per Phase 1.5's "realism over convenience" requirement. Because
+the leakage pool size is constant rather than growing with the customer
+count, and only a small fraction of customers ever draw from it, this
+cannot reproduce Finding 1's percolation — only a small, bounded
+sub-population is ever at risk of incidental collision.
+
+The bulk of deliberate, structured sharing now comes from
+`src/generator/legitimate_clusters.py` (household/office/campus/business),
+not from this ambient layer — this module's job is narrow: realistic
+background noise, not the primary sharing mechanism.
 """
 
 from __future__ import annotations
@@ -19,21 +32,34 @@ import pandas as pd
 from src.generator.rng import rng_for
 
 
-def assign_pooled_slot(entity_ids: pd.Series, seed: int, namespace: str, pool_ratio: float) -> pd.Series:
-    """Map each distinct entity_id to a deterministic pool-slot index.
+def assign_individual_or_leaked_slot(
+    entity_ids: pd.Series, seed: int, namespace: str, leakage_prob: float, leakage_pool_size: int
+) -> pd.Series:
+    """Mostly-unique assignment with rare, bounded cross-population leakage.
 
-    pool_size = max(1, round(n_distinct_entities * pool_ratio)) — a ratio
-    below 1.0 guarantees some entities share a slot (ambient collision).
+    Each distinct entity_id gets a slot guaranteed unique to it (built
+    from the id itself) with probability `1 - leakage_prob`. With
+    probability `leakage_prob` it instead draws from a small FIXED-size
+    pool shared by the whole population (`leakage_pool_size`, a constant,
+    not scaled with population size) — this is what produces "occasional
+    cross-community reuse" without reintroducing percolation.
     """
-    if not 0 < pool_ratio <= 1:
-        raise ValueError("pool_ratio must be in (0, 1]")
+    if not 0 <= leakage_prob <= 1:
+        raise ValueError("leakage_prob must be in [0, 1]")
+    if leakage_pool_size < 1:
+        raise ValueError("leakage_pool_size must be >= 1")
 
     distinct = sorted(entity_ids.astype(str).unique().tolist())
-    n = len(distinct)
-    pool_size = max(1, round(n * pool_ratio))
+    roll_rng = rng_for(seed, "leakage-roll", namespace)
+    pool_rng = rng_for(seed, "leakage-pool", namespace)
+    rolls = roll_rng.random(size=len(distinct))
+    pool_slots = pool_rng.integers(0, leakage_pool_size, size=len(distinct))
 
-    rng = rng_for(seed, "pool-slot", namespace)
-    slot_assignment = rng.integers(0, pool_size, size=n)
-    slot_map = dict(zip(distinct, slot_assignment.tolist()))
+    slot_map: dict[str, str] = {}
+    for entity_id, roll, pool_slot in zip(distinct, rolls, pool_slots):
+        if roll < leakage_prob:
+            slot_map[entity_id] = f"leak-{namespace}-{pool_slot}"
+        else:
+            slot_map[entity_id] = f"indiv-{namespace}-{entity_id}"
 
     return entity_ids.astype(str).map(slot_map)

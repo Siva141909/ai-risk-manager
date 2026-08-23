@@ -1,0 +1,9 @@
+# Phase 0 minimum environment only.
+# Do NOT add xgboost / networkx / langgraph / fastapi / faiss / streamlit
+# etc. here until the phase that actually needs them (see
+# ai_risk_manager_system_design.md Section 32, build order). Adding them
+# now would violate Phase 0's "minimal dependencies" constraint.
+
+PyYAML==6.0.3      # config loading (src/config.py)
+pandas==3.0.5       # required for the dataset schema audit once IEEE-CIS is acquired
+pytest==9.1.1        # test infrastructure

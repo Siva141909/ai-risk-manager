@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Raw/synthetic/processed data is large and, for raw IEEE-CIS, subject to
+# Kaggle competition terms — never commit it. See docs/DATASET_ACQUISITION.md.
+data/raw/*
+!data/raw/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+data/processed/*
+!data/processed/.gitkeep

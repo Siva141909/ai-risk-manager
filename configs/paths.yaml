@@ -1,0 +1,22 @@
+# Canonical data/artifact locations, resolved relative to the project root.
+# No dataset-specific filenames are hardcoded here beyond what the design
+# doc's Section 27 repository layout and the IEEE-CIS competition's known
+# file names require — see docs/DATASET_ACQUISITION.md for the expected files.
+
+data:
+  raw_dir: data/raw
+  synthetic_dir: data/synthetic
+  processed_dir: data/processed
+
+  # Expected IEEE-CIS filenames once acquired (see docs/DATASET_ACQUISITION.md).
+  # These are paths the ingestion code will look for later — not a claim that
+  # the files exist yet.
+  ieee_cis:
+    train_transaction: data/raw/train_transaction.csv
+    train_identity: data/raw/train_identity.csv
+    test_transaction: data/raw/test_transaction.csv
+    test_identity: data/raw/test_identity.csv
+    sample_submission: data/raw/sample_submission.csv
+
+configs_dir: configs
+docs_dir: docs

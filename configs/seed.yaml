@@ -1,0 +1,5 @@
+# Canonical project seed — Section 24 of the design doc.
+# Every stochastic process in this project (ring generator, model training,
+# any train/val split shuffling that is not the strict temporal split) must
+# read this value rather than hardcoding its own. One seed, one source of truth.
+seed: 42

@@ -1,0 +1,46 @@
+"""Synthetic device generation.
+
+100% SYNTHETIC — docs/DATASET_AUDIT.md Section 9 confirmed real
+DeviceInfo cannot anchor device identity (dominated by OS/browser-family
+labels, not fingerprints), so device identity here has no real basis and
+must not be presented as one. See docs/ENTITY_MODEL.md.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from src.generator.pools import assign_pooled_slot
+from src.generator.rng import rng_for
+
+DEVICE_TYPES = ["mobile", "desktop"]
+DEVICE_TYPE_WEIGHTS = [0.6, 0.4]  # illustrative only, not derived from real data
+
+
+def mint_device_id(seed: int, slot: str) -> str:
+    rng = rng_for(seed, "device-id", slot)
+    return f"DEV-{rng.integers(0, 10**8):08d}"
+
+
+def mint_device_type(seed: int, slot: str) -> str:
+    rng = rng_for(seed, "device-type", slot)
+    return rng.choice(DEVICE_TYPES, p=DEVICE_TYPE_WEIGHTS)
+
+
+def assign_base_devices(customer_proxy_ids: pd.Series, seed: int, pool_ratio: float) -> pd.DataFrame:
+    """Ambient (non-narrative) device assignment: one 'home device' per
+    customer_proxy_id, with realistic pool-driven collisions.
+
+    Returns a DataFrame indexed like customer_proxy_ids with columns
+    device_synthetic_id, device_type_synthetic.
+    """
+    slots = assign_pooled_slot(customer_proxy_ids, seed, "device", pool_ratio)
+    device_ids = slots.map(lambda s: mint_device_id(seed, s))
+    device_types = slots.map(lambda s: mint_device_type(seed, s))
+    return pd.DataFrame(
+        {
+            "device_synthetic_id": device_ids,
+            "device_type_synthetic": device_types,
+        },
+        index=customer_proxy_ids.index,
+    )

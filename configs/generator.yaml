@@ -1,0 +1,47 @@
+# Phase 1D-1G synthetic generator configuration.
+# Values here are illustrative defaults matching src/generator/*.py's
+# built-in defaults (GeneratorConfig / PoolRatios / DEFAULT_CLUSTER_TYPES /
+# DEFAULT_RING_TYPES) — kept here for visibility/documentation and so a
+# future run can override without editing code. The seed itself comes
+# from configs/seed.yaml, not duplicated here.
+
+dev_sample:
+  n_transactions: 20000
+
+pool_ratios:
+  # ambient (non-narrative) synthetic-infra sharing rate per entity type —
+  # smaller ratio = more background collision. See docs/SYNTHETIC_DATA_GENERATION.md.
+  device: 0.75
+  ip: 0.55
+  bank_account: 0.95
+  address: 0.65
+
+legitimate_clusters:
+  household: {count: 15, size_min: 2, size_max: 5, share: [device, ip, address]}
+  office: {count: 6, size_min: 5, size_max: 15, share: [ip]}
+  campus: {count: 2, size_min: 20, size_max: 60, share: [ip_range]}
+  business: {count: 5, size_min: 3, size_max: 8, share: [address]}
+
+rings:
+  shared_device:
+    count: 3
+    size_min: 3
+    size_max: 8
+    burst_window_minutes: 360
+    amount_pattern: near_identical
+    noise_ratio: 0.2
+  shared_bank_account:
+    count: 3
+    size_min: 3
+    size_max: 8
+    burst_window_minutes: 360
+    amount_pattern: varied
+    noise_ratio: 0.2
+  multi_attribute:
+    count: 2
+    size_min: 4
+    size_max: 8
+    burst_window_minutes: 180
+    amount_pattern: near_identical
+    noise_ratio: 0.15
+  decoy_attach_probability: 0.3

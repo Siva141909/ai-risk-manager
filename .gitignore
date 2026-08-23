@@ -8,6 +8,7 @@ __pycache__/
 # regenerate by re-running the corresponding script.
 scratch_audit_output.json
 scratch_customer_proxy_output.json
+scratch_feature_audit_output.json
 
 # Raw/synthetic/processed data is large and, for raw IEEE-CIS, subject to
 # Kaggle competition terms — never commit it. See docs/DATASET_ACQUISITION.md.

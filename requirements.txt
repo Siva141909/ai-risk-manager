@@ -6,3 +6,6 @@ PyYAML==6.0.3      # config loading (src/config.py)
 pandas==3.0.5       # dataset audit + synthetic generator dataframes
 pytest==9.1.1        # test infrastructure
 networkx==3.6.1       # Phase 1I graph dataset — explicitly NOT Neo4j, NOT a GNN
+xgboost==3.4.1         # Phase 2C ML baseline — requires `brew install libomp` on macOS
+scikit-learn==1.9.0     # Phase 2C Logistic Regression baseline, Phase 2H calibration, metrics
+pyarrow==25.0.1           # parquet persistence for the engineered feature matrix (Phase 2 perf constraints)

@@ -4,6 +4,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 
+# Regenerable raw output of scripts/audit_dataset.py — not a deliverable,
+# regenerate by re-running the script against data/raw/.
+scratch_audit_output.json
+
 # Raw/synthetic/processed data is large and, for raw IEEE-CIS, subject to
 # Kaggle competition terms — never commit it. See docs/DATASET_ACQUISITION.md.
 data/raw/*

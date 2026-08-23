@@ -1,131 +1,151 @@
-# Graph Feasibility Check — PRELIMINARY (dataset not yet acquired)
+# Graph Feasibility Check — VERIFIED AGAINST REAL DATA
 
-**Status caveat:** IEEE-CIS is not present locally yet (see
-`DATASET_ACQUISITION.md`). This document answers Section 13's feasibility
-questions from the **publicly documented IEEE-CIS competition schema**
-(column names and their known semantics), not from an actual inspection of
-the data — no row counts, cardinalities, missingness rates, or co-occurrence
-statistics are claimed here, because none have been measured. Every
-quantitative claim below is deferred to a follow-up pass once the files are
-downloaded and this document is re-verified against real data. Treat this
-as "is the *shape* of the data plausible for a graph layer," not "here is
-the graph."
+**Status:** the Phase 0 preliminary version of this document was based on
+publicly documented IEEE-CIS schema, not actual inspection. That version
+is superseded — every claim below is now backed by numbers measured
+directly from `data/raw/*.csv` (see `docs/DATASET_AUDIT.md` for the full
+audit and `scripts/audit_dataset.py` for the exact computation). Two
+conclusions changed materially from the Phase 0 pass, both downgrades in
+confidence, both flagged explicitly below rather than silently folded in.
 
 ## 1. Which real fields can anchor entities?
 
-Candidates, by design-doc entity (Section 7):
-
-| Target entity | Candidate anchor field(s) | Confidence this is a real anchor |
-|---|---|---|
-| `customer` | No direct customer/account ID exists in IEEE-CIS. `card1`–`card6` (anonymized card attributes) is the closest proxy for "the same payment instrument reused," which the design doc (Section 7) already names as the intended derivation: cluster by card/identity hash groupings to synthesize a `customer_id`. | Medium — plausible proxy, not a true customer ID |
-| `device` | `DeviceInfo` + `DeviceType` (identity table) is the closest real device signal. `id_01`–`id_38` may contain additional device/browser fingerprint-like signals but their semantics are undocumented by Kaggle (deliberately obfuscated) beyond being anonymized numeric/categorical fields. | Medium — real field, but only ~24% of transactions have a matching identity row in the known public documentation of this competition, so device anchoring will be partial coverage, not universal |
-| `payment_instrument` | `card1`–`card6` | Medium-high — same caveat as `customer`: a real field, but not a designed relational key, so "same card" is inferred from attribute equality, not an explicit ID |
-| `merchant` | `ProductCD` only approximates a merchant category, not a merchant identity. There is no merchant ID field in IEEE-CIS. | Low — this is a category proxy, not a merchant anchor. The design doc (Section 7) already acknowledges `merchant_id` is synthetic/mapped from `ProductCD`, i.e., a many-to-one category label standing in for merchant identity, not a real 1:1 merchant anchor |
-| `email/domain` | `P_emaildomain`, `R_emaildomain` | Medium-high — real, genuinely a domain-level identifier, though domain-level sharing (e.g., many unrelated users on `gmail.com`) is coarse and needs the multi-attribute weighting the design doc already calls for (Section 4, Q8) |
-| `address` | `addr1`, `addr2` (anonymized, low-cardinality categorical, not real addresses) | Low — these are anonymized codes, not usable for anything address-shaped like pincode adjacency; the design doc already scopes address to synthetic overlay only (Section 7) |
-| `ip_address` | **Not present.** IEEE-CIS contains no IP field. | None — must be fully synthetic, consistent with the design doc |
-| `bank_account` | **Not present.** No settlement/bank account field. | None — must be fully synthetic, consistent with the design doc |
+| Target entity | Candidate anchor field(s) | Confidence — Phase 0 (documented schema) | Confidence — NOW (measured) |
+|---|---|---|---|
+| `customer` | `card1`–`card6` tuple | Medium | **Downgraded to Low-Medium.** 14,893 unique combinations across 590,540 rows, but 72.5% of combinations repeat, covering 99.3% of rows; the single largest combination has **14,112 rows** with a fraud rate (3.73%) statistically indistinguishable from the dataset base rate (3.50%) — i.e., it is not a coordinated cluster, it is a coarse card-issuer bucket. See §4 below. |
+| `device` | `DeviceInfo` + `DeviceType` | Medium | **Downgraded to Low.** `DeviceInfo`'s top value (`Windows`, 47,722 rows) is an OS family label, not a device fingerprint. Only a long tail of specific Android build strings has any device-model specificity, and even those identify a phone *model*, not one physical device. Confirms the design doc's existing choice (Section 7) to keep `device` fully synthetic — this is now evidence, not caution. |
+| `payment_instrument` | `card1`–`card6` | Medium-high | **Downgraded to Medium**, same basis as `customer` above — attribute-equality is real but coarse; needs narrowing before use as a ring-forming edge. |
+| `merchant` | `ProductCD` | Low | **Unchanged — confirmed Low.** Measured cardinality: exactly 5 distinct values. A 5-way category cannot function as merchant identity. |
+| `email/domain` | `P_emaildomain`, `R_emaildomain` | Medium-high | **Unchanged — confirmed Medium-high.** Measured cardinality: 59 / 60 distinct domains — genuinely domain-level, coarse in the way documented (e.g. `gmail.com` will span many unrelated users), consistent with the Phase 0 expectation. |
+| `address` | `addr1`, `addr2` | Low | **Unchanged — confirmed Low.** Measured cardinality: 332 / 74 — anonymized codes, not real geography. |
+| `ip_address` | Not present | None | **Unchanged — confirmed absent.** No IP-shaped field exists anywhere in either transaction or identity files. |
+| `bank_account` | Not present | None | **Unchanged — confirmed absent.** No settlement/bank-account field exists in either file. |
 
 ## 2. Which relationships are naturally available?
 
-At most: "these transactions share the same `card1`–`card6` combination,"
-"these transactions share the same `P_emaildomain`," and, for the subset of
-transactions with a matching identity row, "these transactions share the
-same `DeviceInfo`." These are **attribute co-occurrence relationships**,
-not a designed relational graph — IEEE-CIS was built for row-level
-classification, not entity resolution, so there is no ground-truth
-"these two transactions belong to the same real person" label at all. The
-design doc states this plainly (Section 5–6: "Weak/implicit... aren't
-curated for ring analysis") and this preliminary check does not find
-reason to disagree.
+Confirmed by direct measurement: "same `card1`–`card6` combination," "same
+`P_emaildomain`/`R_emaildomain`," and — for the 24.42% (train) /
+28.01% (test) of transactions with a matching identity row — "same
+`DeviceInfo`." These remain **attribute co-occurrence relationships, not a
+designed relational graph**, exactly as the Phase 0 pass expected. What's
+new: the co-occurrence on `card1`–`card6` is measurably **too coarse to
+use directly** (§4) — this wasn't knowable without the real data, and the
+Phase 0 "medium confidence" rating undersold that risk.
 
 ## 3. Which relationships must be synthetic?
 
-Per Section 7 of the design doc, and confirmed by (1) above:
-- `device` (beyond the partial real `DeviceInfo` signal)
-- `ip_address` — entirely synthetic, no real field exists
-- `bank_account` — entirely synthetic, no real field exists
-- `upi_id` — entirely synthetic, no real field exists
-- `address` (beyond the low-cardinality anonymized `addr1/addr2` codes)
-- `settlement`, `refund` — entirely synthetic, no real field exists
-- The `DEVICE_SHARED_WITH` ring-forming edges specifically (Section 13) —
-  these are exactly what the ring generator (Section 8) injects on top of
-  real transaction rows, not something discoverable from the raw data
+Per Section 7 of the design doc, confirmed and (for `device`) reinforced
+by measurement:
+- `device` as a uniqueness anchor — confirmed synthetic-only is correct
+  (§1); real `DeviceInfo` cannot serve this role at the needed resolution.
+- `ip_address` — entirely synthetic, zero real field, confirmed by
+  column-level inspection of both transaction and identity files.
+- `bank_account` — entirely synthetic, zero real field, confirmed.
+- `upi_id`, `settlement`, `refund` — entirely synthetic, zero real field
+  in either file (unchanged from Phase 0, now confirmed by direct
+  column inspection rather than assumption).
+- `address` beyond the low-cardinality anonymized `addr1`/`addr2` codes.
+- The `DEVICE_SHARED_WITH` ring-forming edges (Section 13) — entirely
+  generator-injected, not discoverable from raw data.
+- **New finding, not anticipated at Phase 0:** naive `card1`–`card6`
+  tuple-equality edges must ALSO be treated as unsafe-to-use-directly —
+  not because the field is absent (it's real and present), but because
+  using it without narrowing produces false mega-clusters indistinguishable
+  from base-rate legitimate traffic (§4). This sits between "real" and
+  "synthetic" — it's a real field that needs a synthetic-overlay-grade
+  narrowing rule before being trusted, which Phase 0 could not have
+  surfaced from documentation alone.
 
-## 4. How much of the graph will be synthetic?
+## 4. Card1–card6 mega-cluster finding (new — measured, not anticipated at Phase 0)
 
-Structurally, most of it. Two of the six node types in Section 13
-(`customer`, `payment_instrument`) have a real but weak/proxy anchor;
-`merchant` has a coarse category proxy; `device` has partial real coverage;
-`ip_address` and `bank_account` have zero real signal. The edges that
-actually *form rings* (`DEVICE_SHARED_WITH`, shared bank account, shared IP)
-are overwhelmingly synthetic by construction, because the real dataset
-supplies no bank/IP data at all and only partial, coarse device/card
-co-occurrence. This matches the design doc's own framing (Section 2, Q4:
-"Ring ground truth is entirely synthetic") — this check does not surface a
-contradiction, it confirms the premise the design doc already states
-explicitly.
+Direct measurement (`scripts/audit_dataset.py`, full detail in
+`docs/DATASET_AUDIT.md` §8):
 
-## 5. Can we inject ring structures without modifying the original fraud labels?
+- 14,893 unique `card1`–`card6` combinations in 590,540 train rows.
+- 10,790 combinations (72.5%) repeat; those repeats cover 586,437 rows
+  (99.3% of the dataset).
+- Largest single combination: **14,112 rows**, fraud rate **3.73%**
+  (dataset base rate: 3.50%) — no elevated fraud signal, i.e., this is
+  not a ring, it's a large legitimate cohort sharing a coarse card
+  attribute bucket (most likely a common BIN/issuer/network/type
+  combination, not a shared physical card).
 
-Yes, in principle, and this is a hard requirement to preserve. The design
-doc's leakage-check plan (Section 24) already specifies injecting synthetic
-entities *after* the temporal split is fixed and never touching `isFraud`.
-Practically: the ring generator should only ever *add* new columns/rows
-(synthetic entity IDs, `ring_id`, `legitimate_shared_infra`) and join them
-onto the real transaction rows by `TransactionID` — it must never overwrite
-`isFraud`, `TransactionAmt`, `TransactionDT`, or any other real column.
-This is an implementation discipline to enforce in Phase 2 (a unit test
-should assert the real columns are byte-identical before/after the
-generator runs), not something verifiable from schema alone — flagged here
-as a requirement to carry into the generator's test suite.
+**Implication:** if Phase 2's ring generator or entity-resolution logic
+treats `card1`–`card6` tuple equality as "same customer" without
+additional narrowing (e.g. requiring co-occurrence within a bounded time
+window, or requiring agreement on `addr1`/`P_emaildomain` too), the very
+first entity graph built from real data will already contain a
+14,112-node false ring before any synthetic ring or legitimate-cluster
+generator even runs. This is the same class of failure Section 14
+designed Louvain sub-community detection to catch for oversized shared-IP
+components — but Section 14's mitigation was scoped to the graph-analysis
+stage, not to the upstream `customer_id` derivation rule itself. **This
+needs an explicit narrowing rule decided before Phase 2 implements entity
+resolution** — see `docs/DATASET_AUDIT.md`'s "Architecture changes"
+section for the specific options; this document does not pick one.
 
-## 6. Can we construct legitimate shared-infrastructure clusters?
+## 5. How much of the graph will be synthetic?
 
-Yes, structurally — nothing about the schema prevents it, because these
-clusters are synthetic overlays by construction regardless (Section 8's
-"legitimate-but-suspicious clusters" mode). The one dependency worth
-flagging: if the negative-class generator wants to anchor a "family sharing
-a device" scenario in *some* real signal (e.g., picking real transactions
-that already share a `card1`/`DeviceInfo` combination and only adding
-non-clustered timing/refund behavior on top), that depends on there being
-enough real co-occurrence in the data to sample from — an empirical
-question this check cannot answer without the actual files. If real
-co-occurrence turns out to be too sparse, the fallback (fully synthetic
-negative clusters, same as the positive-ring generator) still works and is
-already the design's default construction method.
+**Unchanged conclusion, now on firmer footing.** Most of the graph's
+ring-forming structure remains synthetic: `ip_address` and `bank_account`
+contribute zero real signal (confirmed absent, not just undocumented);
+`merchant` is a 5-value category proxy (confirmed, not assumed);
+`device` needed for `DEVICE_SHARED_WITH` is confirmed unsuitable from real
+`DeviceInfo` and must stay synthetic. What's new is a *sharper* picture of
+`customer`/`payment_instrument`: not just "weak proxy" but "measurably
+unsafe without a narrowing rule" — meaning the fraction of the graph that
+can lean on real data is smaller in practice than the Phase 0 "medium
+confidence" rating implied, even though the field itself is real.
 
-## 7. What limitations does this create?
+## 6. Can we inject ring structures without modifying the original fraud labels?
 
-- **No true entity resolution.** "Same `card1`–`card6`" is a proxy for
-  "same payment instrument," not a verified identity link — two different
-  real cards could coincidentally collide on all six anonymized attributes,
-  and the design's own synthetic `customer_id` derivation (Section 7)
-  inherits this imprecision. This should be stated as a limitation in the
-  submission, consistent with the design doc's Section 2 Q5 commitment to
-  not overstate what the synthetic layer proves.
-- **Device coverage is partial.** Only transactions with a matching
-  identity-table row have any device signal at all (real coverage is a
-  known limitation of this competition's data — worth confirming the exact
-  join rate once the files are read, rather than asserting a specific
-  percentage now).
-- **No real merchant, IP, or bank-account signal whatsoever** — the graph's
-  most rung-forming edge types (shared IP, shared bank account) are 100%
-  synthetic, meaning ring detection accuracy numbers measure "can we find
-  the patterns we wrote a generator for," not "can we find real collusion."
-  This is exactly the limitation the design doc requires be stated
-  up front (Section 2, Q5; Section 9; Judge Q&A 6, 27) — this check finds
-  no basis to soften that framing.
-- **Address data is unusable as a real signal** — `addr1`/`addr2` are
-  anonymized low-cardinality codes, not real geography; any
-  pincode-adjacency-style reasoning must be purely synthetic (already
-  scoped this way in Section 7 — "not a primary signal").
+Unchanged from Phase 0: yes, in principle, verified now to be practically
+enforceable — `TransactionID` is confirmed unique in both train (590,540)
+and test (506,691), so joining synthetic columns onto real rows by
+`TransactionID` is a safe, unambiguous operation. The Phase 0
+recommendation stands: a unit test should assert real columns are
+byte-identical before/after the generator runs (still not implemented —
+this is a Phase 2 requirement, not something this audit builds).
 
-## Re-verification required
+## 7. Can we construct legitimate shared-infrastructure clusters?
 
-This document must be re-run/re-checked once `data/raw/*.csv` exist and
-`docs/DATASET_AUDIT.md` has real cardinality, join-rate, and missingness
-numbers for `card1`–`card6`, `DeviceInfo`, `P_emaildomain`, and `addr1/addr2`
-— those numbers will either confirm or sharpen the "medium confidence"
-anchors marked above, and may change the practical (not structural)
-answer to "how much of the graph is synthetic."
+Unchanged from Phase 0, with one added data point: real co-occurrence on
+`card1`–`card6` is now known to be *abundant* (72.5% of combinations
+repeat) — if the negative-class generator wants to anchor "legitimate
+shared attribute" scenarios in real co-occurrence rather than fully
+synthetic data, there is plenty of real repeat structure to sample from
+(e.g., the very mega-clusters flagged as unsafe for positive-ring
+purposes in §4 are, by the same evidence, good raw material for the
+*legitimate*-cluster generator — a large low-fraud-rate shared-attribute
+group is exactly what "looks coordinated but isn't" should look like).
+
+## 8. What limitations does this create?
+
+- **`card1`–`card6` cannot be used as a naive customer/payment-instrument
+  key** (§4) — confirmed limitation, stronger than the Phase 0 "imprecise
+  proxy" framing suggested. Needs a documented narrowing rule (see
+  `DATASET_AUDIT.md`).
+- **Device coverage is partial and biased, not just partial.** Measured:
+  24.42% (train) / 28.01% (test) of transactions have any identity/device
+  data at all, and that subset has a 7.847% fraud rate vs. 2.094% for the
+  uncovered majority (3.75x difference) — any device-based feature or
+  graph signal describes a biased quarter of transactions, not a random
+  sample. This is stronger and more specific than the Phase 0 "partial
+  coverage" note.
+- **No real merchant, IP, or bank-account signal whatsoever** — confirmed
+  by direct column inspection (not assumption). Ring-forming edge types
+  (shared IP, shared bank account) remain 100% synthetic; ring-detection
+  numbers measure "can we find the patterns we wrote a generator for."
+  Unchanged from Phase 0 — this check finds no basis to soften that
+  framing, and now has zero ambiguity behind it.
+- **Address data is unusable as a real signal** — confirmed cardinality
+  (332 / 74) is consistent with anonymized low-cardinality codes, not
+  real geography. Unchanged from Phase 0.
+
+## Status: no longer preliminary
+
+This document is now backed by measured statistics from the actual
+dataset and does not require further re-verification unless the raw
+files change. Any Phase 2 implementation decision about `customer_id`
+derivation (§4) should be made explicitly and referenced back to this
+document, not re-derived from scratch.

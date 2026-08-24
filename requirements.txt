@@ -1,11 +1,18 @@
-# Do NOT add xgboost / langgraph / fastapi / faiss / streamlit etc. here
-# until the phase that actually needs them (see
-# ai_risk_manager_system_design.md Section 32, build order).
+# Do NOT add fastapi / streamlit etc. here until the phase that actually
+# needs them (see ai_risk_manager_system_design.md Section 32, build order).
 
 PyYAML==6.0.3      # config loading (src/config.py)
 pandas==3.0.5       # dataset audit + synthetic generator dataframes
 pytest==9.1.1        # test infrastructure
 networkx==3.6.1       # Phase 1I graph dataset — explicitly NOT Neo4j, NOT a GNN
 xgboost==3.4.1         # Phase 2C ML baseline — requires `brew install libomp` on macOS
-scikit-learn==1.9.0     # Phase 2C Logistic Regression baseline, Phase 2H calibration, metrics
+scikit-learn==1.9.0     # Phase 2C Logistic Regression baseline, Phase 2H calibration, metrics; also
+                          # Phase 4K RAG retrieval (TfidfVectorizer — see docs/RAG_POLICY.md for why
+                          # TF-IDF instead of a neural embedding model)
 pyarrow==25.0.1           # parquet persistence for the engineered feature matrix (Phase 2 perf constraints)
+pydantic==2.13.4            # Phase 4I structured agent output schema
+langgraph==1.2.11             # Phase 4F investigation workflow state machine
+claude-agent-sdk==0.2.144       # Phase 4 development LLM backend — uses the local, already-authenticated
+                                  # Claude Code environment, no separate API key. See docs/AGENT_ARCHITECTURE.md.
+                                  # `anthropic` (the standalone API SDK) is deliberately NOT pinned here —
+                                  # AnthropicAPIClient imports it lazily only if ANTHROPIC_API_KEY is set.

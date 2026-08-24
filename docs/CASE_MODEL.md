@@ -155,3 +155,37 @@ enforced, untouched by Phase 3). Phase 3 adds:
 | Graph thresholds selected without test labels | `GRAPH_FLAG_MIN_COMMUNITY_SIZE=3` is a fixed structural constant (matches the generator's own `size_min`), not fit from any data split at all | Code inspection — no fitting function exists for it |
 | ML test predictions remain frozen | `scripts/ml_graph_ablation.py` loads the already-saved Phase 2 model/calibrator/thresholds and only ever calls `.predict`/`.transform` — no `.fit` call anywhere in the script | Code inspection; Phase 2's own model files are read-only inputs |
 | No future transactions enter graph features for a case's REAL-TIME score | Real-time (`ml_risk_score`) and retrospective (`graph_evidence`) are separate fields, never combined into one "score" — §5 | `Case` dataclass structure itself |
+
+---
+
+## 7. Phase 4 addendum — how the investigation agent consumes `Case`
+
+`Case` is the only object the Phase 4 investigation agent ever receives.
+`src/agents/case_contract.py::build_agent_input(case: Case) -> AgentInput`
+is the sole constructor of the agent's input, and its signature takes a
+`Case` and nothing else — there is no call site anywhere that could pass
+a `CaseGroundTruth` through, even by mistake (structural, not
+conventional; tested by `tests/unit/test_agent_case_contract.py`).
+
+**Detection evidence vs. investigation evidence** (a second distinction
+layered on top of §5's real-time/retrospective split):
+
+- **Detection evidence** — `AgentInput.detection_evidence`
+  (`ml_risk_score`, `ml_risk_tier`, `graph_evidence`) — is exactly
+  `Case`'s own fields, copied verbatim. This is what got the case
+  created in the first place. It is fixed before the agent runs and the
+  agent can only ever *report* it, never change it
+  (`docs/SAFETY_MODEL.md` §1).
+- **Investigation evidence** — whatever the agent's tool calls retrieve
+  *during* the investigation (transaction history, related entities,
+  policy chunks, graph neighbors). It did not exist as "evidence" until
+  the agent asked for it, even though the underlying data existed all
+  along. Every item carries its own `is_retrospective` flag
+  (`docs/CASE_MODEL.md` §5's real-time/retrospective boundary, now
+  applied per tool call rather than per feature).
+
+The agent's introduction of the real-time/retrospective boundary at
+tool-call granularity, its evidence-ID provenance model, and its 10-tool
+authorization surface are documented in full in
+`docs/AGENT_ARCHITECTURE.md`, `docs/TOOL_CONTRACTS.md`, and
+`docs/SAFETY_MODEL.md`.

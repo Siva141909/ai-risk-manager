@@ -16,3 +16,12 @@ claude-agent-sdk==0.2.144       # Phase 4 development LLM backend — uses the l
                                   # Claude Code environment, no separate API key. See docs/AGENT_ARCHITECTURE.md.
                                   # `anthropic` (the standalone API SDK) is deliberately NOT pinned here —
                                   # AnthropicAPIClient imports it lazily only if ANTHROPIC_API_KEY is set.
+fastapi==0.121.2                  # Phase 5A production backend — thin API layer over the frozen pipeline,
+                                    # see docs/BACKEND_ARCHITECTURE.md. Pulls in starlette (downgraded from a
+                                    # pre-existing transitive 1.6.0 to 0.49.3 for fastapi compatibility —
+                                    # verified this does not break claude-agent-sdk or langgraph, both of
+                                    # which only need starlette transitively and still import cleanly).
+uvicorn==0.52.4                     # ASGI server to run src.api.main:app locally (already present transitively;
+                                      # pinned explicitly now that it's a first-class dependency)
+httpx==0.28.1                         # required by fastapi.testclient.TestClient (Phase 5A.11 API tests);
+                                        # already present transitively, pinned explicitly for the same reason

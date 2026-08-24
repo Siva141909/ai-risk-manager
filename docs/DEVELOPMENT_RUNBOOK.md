@@ -10,6 +10,40 @@ pip install -r requirements.txt
 
 No `ANTHROPIC_API_KEY` is required for anything in this runbook.
 
+## Reproducing from a fresh clone (Phase 6 addition)
+
+`pytest -q` right after `pip install` gets you **146 of 228 backend
+tests** (the ones built on in-memory fixtures) — the other 82 (all API
+tests, several integration tests) read generated artifacts under
+`data/synthetic/` and `data/processed/` that are correctly gitignored
+(`docs/RAZORPAY_TRACK_02_COMPLIANCE.md` §15) and therefore don't exist
+on a fresh clone. To get all 228 passing and the API server running,
+acquire the raw dataset first (`docs/DATASET_ACQUISITION.md`), then run
+this exact sequence once:
+
+```bash
+python -m scripts.generate_full_benchmark          # data/synthetic/full/
+python -m scripts.prepare_features                 # data/processed/features.parquet
+python -m scripts.train_baseline                   # data/processed/model_*.json, calibrator_*.joblib
+python -m scripts.calibrate_and_threshold           # data/processed/risk_thresholds.json
+python -m scripts.score_val_test_for_graph_fusion   # data/processed/val_test_ml_scores.parquet
+python -m scripts.graph_benchmark_full              # data/synthetic/full/graph_benchmark_full_report.json
+python -m scripts.graph_health_full                 # data/synthetic/full/graph_health_full.json
+python -m scripts.ml_graph_ablation                 # data/processed/ml_graph_ablation_report.json
+pytest -q                                            # now all 228 pass
+```
+
+For the Track 02 held-out evaluation specifically (independent of the
+above — a separate benchmark, `docs/RAZORPAY_TRACK_02_COMPLIANCE.md` §3):
+
+```bash
+python -m scripts.generate_holdout_benchmark
+python -m scripts.run_track02_evaluation
+```
+
+Full gap analysis and verified environment versions:
+[`docs/REPRODUCIBILITY_AUDIT.md`](REPRODUCIBILITY_AUDIT.md).
+
 ## Running the test suite
 
 ```bash

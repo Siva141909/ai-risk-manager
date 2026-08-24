@@ -13,6 +13,18 @@ at all. **The Phase 2 model itself was not retrained, retuned, or
 modified in any way** — the explicit Phase 3 experimental rule. Full
 output: `data/processed/ml_graph_ablation_report.json`.
 
+**Not the same measurement as the Track 02 held-out ring-recovery
+metrics (Phase 6 clarification, no numbers below changed):** §4's 84%
+is a *transaction-level* statistic — of ring-member transactions in the
+validation+test split (seed 42, the design/validation benchmark), what
+fraction were also `graph_flagged=True`. `docs/RAZORPAY_TRACK_02_COMPLIANCE.md`
+§4/§5 reports a different, *ring-level* statistic (precision/recall of
+recovering each of 8 whole rings) on a genuinely separate, independent
+held-out benchmark (seed 20260824). Both are honest, correctly-computed
+numbers about the same detector — they are not comparable line items
+and neither supersedes the other; a reader citing "the recall of the
+graph detector" should specify which of the two questions they mean.
+
 ---
 
 ## 1. The three stages

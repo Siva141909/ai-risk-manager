@@ -8,6 +8,12 @@ export function formatConfidencePercent(confidence: number): string {
   return `${Math.round(confidence * 100)}%`
 }
 
+/** Thousands-separated integer display (docs/UX_IMPROVEMENT_PLAN.md Issue 2) —
+ * StatTile/table counts otherwise render as unbroken digit strings. */
+export function formatCount(n: number): string {
+  return n.toLocaleString('en-IN')
+}
+
 /** TransactionDT is relative seconds, not a wall-clock timestamp — this
  * dataset has no real dates (docs/API.md). Shown as a labeled relative
  * value, never disguised as a calendar date. */

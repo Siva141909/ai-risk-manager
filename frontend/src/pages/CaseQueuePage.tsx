@@ -9,6 +9,7 @@ import { TableSkeleton } from '../components/common/Skeleton'
 import { InboxIcon, XCircleIcon } from '../components/common/Icons'
 import { useCaseList } from '../hooks/useCases'
 import { useInvestigationEnrichment } from '../hooks/useInvestigationEnrichment'
+import { formatCount } from '../utils/format'
 import type { CaseListParams, RiskTier } from '../types/api'
 
 const PAGE_SIZE = 25
@@ -56,7 +57,8 @@ export function CaseQueuePage() {
           <CaseTable cases={data.items} enrichment={enrichment} />
           <div className="pagination-row">
             <span>
-              Showing {(filters.offset ?? 0) + 1}–{(filters.offset ?? 0) + data.items.length} of {data.total}
+              Showing {formatCount((filters.offset ?? 0) + 1)}–{formatCount((filters.offset ?? 0) + data.items.length)} of{' '}
+              {formatCount(data.total)}
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button

@@ -17,9 +17,13 @@ export function useOverviewStats() {
     })),
   })
 
+  // limit=50 (not 1): Overview also surfaces recent graph-flagged cases
+  // directly (docs/UX_IMPROVEMENT_PLAN.md Issue 1) — this is the same
+  // single bounded call as the count-only version, just reusing the rows
+  // it already returns instead of discarding them.
   const graphFlaggedQuery = useQuery({
-    queryKey: ['cases-count', 'graph_flagged'],
-    queryFn: () => apiClient.listCases({ graph_flagged: true, limit: 1 }),
+    queryKey: ['cases-recent-graph-flagged'],
+    queryFn: () => apiClient.listCases({ graph_flagged: true, limit: 50 }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -51,6 +55,11 @@ export function useOverviewStats() {
     .sort((a, b) => b.transaction_dt - a.transaction_dt)
     .slice(0, 5)
 
+  const recentGraphFlagged: CaseSummaryResponse[] = (graphFlaggedQuery.data?.items ?? [])
+    .slice()
+    .sort((a, b) => b.transaction_dt - a.transaction_dt)
+    .slice(0, 5)
+
   const isLoading =
     tierQueries.some((q) => q.isLoading) ||
     graphFlaggedQuery.isLoading ||
@@ -70,5 +79,6 @@ export function useOverviewStats() {
     investigatedCount: investigatedQuery.data?.total ?? 0,
     totalCount: totalQuery.data?.total ?? 0,
     recentHighPriority,
+    recentGraphFlagged,
   }
 }

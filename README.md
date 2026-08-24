@@ -12,7 +12,7 @@ system also finds the accounts secretly working together, and produces
 a cited, human-checkable investigation — not just a score — behind a
 clean REST API, before any consequence occurs.
 
-## Status: Phase 5A — production backend / FastAPI complete
+## Status: Phase 5B — React frontend complete
 
 | Phase | What it built | Status |
 |---|---|---|
@@ -21,12 +21,15 @@ clean REST API, before any consequence occurs.
 | 2 | ML baseline (rules, logistic regression, XGBoost), calibration, cost-driven risk thresholds | done |
 | 3 | Graph signals, ML+graph ablation at full benchmark scale | done |
 | 4 | Investigation agent: LangGraph + 10 tools + RAG policy retrieval + safety/evidence validation, evaluated with real Claude | done ([`docs/AGENT_EVALUATION.md`](docs/AGENT_EVALUATION.md)) |
-| 5A | FastAPI backend around the frozen Phase 2-4 pipeline | done (this README) |
-| 5B+ | Frontend, deployment | not started |
+| 5A | FastAPI backend around the frozen Phase 2-4 pipeline | done ([`docs/BACKEND_ARCHITECTURE.md`](docs/BACKEND_ARCHITECTURE.md)) |
+| 5B | React frontend, real-Claude end-to-end demo | done ([`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md)) |
+| 5C+ | Deployment, auth | not started |
 
 No ML/graph/agent/RAG/evaluation behavior was changed to build the
-Phase 5A API — it is a thin, tested layer around what Phase 2-4 already
-built and proved (`docs/BACKEND_ARCHITECTURE.md` §1).
+Phase 5A/5B layers — the API is a thin, tested layer around what Phase
+2-4 already built and proved (`docs/BACKEND_ARCHITECTURE.md` §1), and
+the frontend talks to that API only — no domain logic, no CSV access,
+no ground-truth exposure (`docs/FRONTEND_ARCHITECTURE.md` §4).
 
 ## Architecture
 
@@ -55,10 +58,10 @@ src/
   agents/ tools/ rag/                                # Phase 4: LangGraph investigation agent, tools, RAG
   api/                                                 # Phase 5A: FastAPI backend (this phase)
   evaluation/                                           # ablation runner, cost model
-tests/{unit,integration,api}/       # 182 Phase 1-4 tests + ~40 Phase 5A API tests, all deterministic
+tests/{unit,integration,api}/       # 223 Phase 1-5A tests, all deterministic
 notebooks/                        # EDA, not shipped code
 scripts/                          # pipeline/evaluation/demo-seeding entrypoints
-frontend/                         # not yet populated (Phase 5B)
+frontend/                         # Phase 5B: Vite + React + TypeScript, src/{app,pages,components,hooks,services,types}/
 docs/                             # architecture, audit, evaluation, and design-deviation docs
 ```
 
@@ -109,15 +112,35 @@ every field is prefixed `"STUB TEST:"` — a stub result is never
 presented as a real-reasoning result. See
 [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) §3.
 
+## Running the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# then: http://localhost:5173 (proxies /api and /health to the backend on :8000)
+```
+
+Requires the backend running separately (`uvicorn src.api.main:app`,
+above) — the frontend never reads data any other way. Visit `/demo`
+for a dev-tooling page linking directly to the 5 backend demo cases
+(`docs/DEMO_FLOW.md`); the two real product nav items are Risk Overview
+and Case Queue.
+
 ## Running tests
 
 ```bash
-pytest -q                 # everything — 182 Phase 1-4 tests + ~40 Phase 5A API tests
+pytest -q                 # backend — 223 Phase 1-5A tests
 pytest tests/api -q        # just the API layer
+
+cd frontend && npm test    # frontend — 36 component/page tests (Vitest + RTL)
+cd frontend && npm run build   # typecheck + production build
 ```
 
-100% deterministic — `StubLLMClient` (or a fake raising client for
-error-path tests) throughout, zero live network calls, zero cost.
+100% deterministic on both sides — `StubLLMClient` (or a fake raising
+client for error-path tests) on the backend, `apiClient` mocked at the
+module boundary on the frontend — zero live network calls, zero cost,
+zero live-Claude dependency in either automated suite.
 
 ## API endpoints
 
@@ -138,6 +161,10 @@ Full request/response contracts, error codes, and demo curl examples:
 - [`docs/BACKEND_ARCHITECTURE.md`](docs/BACKEND_ARCHITECTURE.md) — Phase 5A layering, caching, security, design decisions
 - [`docs/API.md`](docs/API.md) — full API reference
 - [`docs/DEVELOPMENT_RUNBOOK.md`](docs/DEVELOPMENT_RUNBOOK.md) — setup, run, demo-seeding
+- [`docs/FRONTEND_UX.md`](docs/FRONTEND_UX.md) — information architecture, states, API-grounding notes
+- [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md) — tokens, components, evidence/graph visual language
+- [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md) — stack choices, typed API client, testing strategy
+- [`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md) — demo script, visual-validation findings, real-Claude end-to-end proof
 - [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) / [`docs/TOOL_CONTRACTS.md`](docs/TOOL_CONTRACTS.md) / [`docs/RAG_POLICY.md`](docs/RAG_POLICY.md) / [`docs/SAFETY_MODEL.md`](docs/SAFETY_MODEL.md) — Phase 4 agent internals
 - [`docs/AGENT_EVALUATION.md`](docs/AGENT_EVALUATION.md) — 12/12 real-Claude evaluation results and honest limitations
 - [`docs/CASE_MODEL.md`](docs/CASE_MODEL.md) — the `Case`/`CaseGroundTruth` separation every later phase relies on

@@ -19,6 +19,40 @@ system also finds the accounts secretly working together, and produces
 a cited, human-checkable investigation — not just a score — behind a
 clean REST API, before any consequence occurs.
 
+## End-to-end pipeline
+
+```
+REAL IEEE-CIS DATA                                            [REAL]
+        ↓
+ML RISK MODEL           (XGBoost, calibrated, frozen)         [DETERMINISTIC]
+        ↓
+COORDINATION GRAPH      (device/IP/bank_account relationships) [DETERMINISTIC,
+        ↓                on a SYNTHETIC entity/ring layer      SYNTHETIC ground truth]
+ABUSE-RING CASE         (ML score + graph evidence,
+        ↓                never ground truth)                  [DETERMINISTIC]
+LANGGRAPH INVESTIGATION (tool routing, evidence collection,
+        ↓                validation)                          [DETERMINISTIC WORKFLOW]
+CLAUDE                  (reasons over already-gathered
+        ↓                evidence — never sets the risk tier)  [AI]
+EVIDENCE-BACKED REPORT  (every claim traced to a real
+        ↓                tool call, deterministically checked) [AI OUTPUT,
+                                                                 DETERMINISTICALLY VALIDATED]
+HUMAN REVIEW            (human_approval_required_for_action
+                          is always True — the system
+                          recommends, it never acts)           [HUMAN]
+```
+
+**REAL** = unmodified IEEE-CIS transaction data (byte-identical before/after
+generation, `tests/integration/test_reproducibility.py`). **SYNTHETIC**
+= the injected entity/ring/legitimate-cluster layer used only as
+evaluation ground truth (`docs/CASE_MODEL.md` §1) — never conflated
+with real fraud labels. **DETERMINISTIC** = pure functions, no LLM
+involved, same input always produces the same output. **AI** = Claude,
+via LangGraph, reasoning over evidence that already exists — it never
+determines detection output. **HUMAN** = the only layer that can turn a
+recommendation into a real-world action. Full diagram with file-level
+evidence for every stage: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Status: Phase 5C — Razorpay Track 02 compliance locked
 
 | Phase | What it built | Status |

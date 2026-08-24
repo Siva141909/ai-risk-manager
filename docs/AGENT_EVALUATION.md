@@ -82,6 +82,18 @@ of this file; not repeated here since it is now moot).
 
 **12/12 real-Claude runs completed and passed deterministic validation**
 (category A–D checks) on top of being real reasoning (category E).
+
+**Average latency: approximately 42.9 seconds** (arithmetic mean of the
+12 per-case latencies in the table above: 53.7, 19.1, 44.5, 58.7, 55.8,
+42.5, 51.6, 45.3, 38.2, 35.6, 49.9, 20.1 — sums to 515.0s / 12).
+**This is measured development-run latency from this evaluation batch,
+not a production SLA** — no production deployment exists
+(`docs/BACKEND_ARCHITECTURE.md` §10), and this figure reflects the
+`claude_agent_sdk` development backend under the conditions this
+evaluation ran (sequential calls, no concurrency, no caching warm-up).
+It should not be read as a guaranteed or optimized response time for
+any live system.
+
 `requires_human_review=True` in 11 of 12 cases — only case 12
 (genuinely empty evidence, no graph, no risk signals, no history beyond
 the single flagged transaction) results in `close` /

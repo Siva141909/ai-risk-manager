@@ -7,12 +7,19 @@ If code and design doc ever disagree, the design doc wins unless a
 documented, reported deviation says otherwise (see `docs/` for any such
 deviations, e.g. TF-IDF instead of FAISS for RAG retrieval — `docs/RAG_POLICY.md`).
 
+**Razorpay AI Buildathon Track 02 — one class of loss claimed:
+coordinated payment fraud / abuse-ring detection.** Not returns, not
+chargebacks, not generic fraud — see
+[`docs/RAZORPAY_TRACK_02_COMPLIANCE.md`](docs/RAZORPAY_TRACK_02_COMPLIANCE.md)
+for the full requirement-by-requirement compliance evidence, including
+held-out-test precision/recall/F1/false-positive cost.
+
 **One sentence:** fraud models score one transaction at a time; this
 system also finds the accounts secretly working together, and produces
 a cited, human-checkable investigation — not just a score — behind a
 clean REST API, before any consequence occurs.
 
-## Status: Phase 5B — React frontend complete
+## Status: Phase 5C — Razorpay Track 02 compliance locked
 
 | Phase | What it built | Status |
 |---|---|---|
@@ -23,7 +30,8 @@ clean REST API, before any consequence occurs.
 | 4 | Investigation agent: LangGraph + 10 tools + RAG policy retrieval + safety/evidence validation, evaluated with real Claude | done ([`docs/AGENT_EVALUATION.md`](docs/AGENT_EVALUATION.md)) |
 | 5A | FastAPI backend around the frozen Phase 2-4 pipeline | done ([`docs/BACKEND_ARCHITECTURE.md`](docs/BACKEND_ARCHITECTURE.md)) |
 | 5B | React frontend, real-Claude end-to-end demo | done ([`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md)) |
-| 5C+ | Deployment, auth | not started |
+| 5C | Track 02 compliance: genuinely held-out graph-detector evaluation, defense-only audit, repo safety check | done ([`docs/RAZORPAY_TRACK_02_COMPLIANCE.md`](docs/RAZORPAY_TRACK_02_COMPLIANCE.md)) |
+| 5D+ | GitHub push, pitch video, submission | not started |
 
 No ML/graph/agent/RAG/evaluation behavior was changed to build the
 Phase 5A/5B layers — the API is a thin, tested layer around what Phase
@@ -158,6 +166,9 @@ Full request/response contracts, error codes, and demo curl examples:
 
 ## Key documents
 
+- [`docs/RAZORPAY_TRACK_02_COMPLIANCE.md`](docs/RAZORPAY_TRACK_02_COMPLIANCE.md) — requirement-by-requirement Track 02 compliance, held-out precision/recall/F1/FP-cost
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — one labeled REAL/SYNTHETIC/DETERMINISTIC/AI/HUMAN pipeline diagram
+- [`docs/DEFENSE_ONLY_AUDIT.md`](docs/DEFENSE_ONLY_AUDIT.md) — proof the system cannot take an offensive/irreversible action
 - [`docs/BACKEND_ARCHITECTURE.md`](docs/BACKEND_ARCHITECTURE.md) — Phase 5A layering, caching, security, design decisions
 - [`docs/API.md`](docs/API.md) — full API reference
 - [`docs/DEVELOPMENT_RUNBOOK.md`](docs/DEVELOPMENT_RUNBOOK.md) — setup, run, demo-seeding

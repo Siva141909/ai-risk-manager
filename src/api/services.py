@@ -76,18 +76,17 @@ class CaseService:
         limit: int,
         offset: int,
     ) -> tuple[list[CaseSummary], int, list[bool]]:
+        investigated_transaction_ids = None
+        if investigation_status is not None:
+            investigated_transaction_ids = {
+                transaction_id_from_case_id(cid) for cid in self._cache.investigated_case_ids()
+            }
         summaries, total = self._repository.list_cases(
             risk_tier=risk_tier, graph_flagged=graph_flagged,
             start_dt=start_dt, end_dt=end_dt, limit=limit, offset=offset,
+            investigation_status=investigation_status, investigated_transaction_ids=investigated_transaction_ids,
         )
         has_investigation = [self._cache.has_case(s.case_id) for s in summaries]
-        if investigation_status is not None:
-            want_investigated = investigation_status == "investigated"
-            filtered = [
-                (s, hi) for s, hi in zip(summaries, has_investigation) if hi == want_investigated
-            ]
-            summaries = [s for s, _ in filtered]
-            has_investigation = [hi for _, hi in filtered]
         return summaries, total, has_investigation
 
     def get_case(self, case_id: str) -> Case:

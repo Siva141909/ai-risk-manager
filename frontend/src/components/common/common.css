@@ -1,0 +1,142 @@
+/* Shared primitives — Button, Badge, Card, Table, EmptyState, Skeleton,
+   Tooltip. Every value comes from styles/tokens.css. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-size);
+  font-weight: var(--text-body-strong-weight);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+.btn-md { height: 36px; padding: 0 var(--space-4); }
+.btn-sm { height: 28px; padding: 0 var(--space-3); font-size: var(--text-small-size); }
+
+.btn-primary { background: var(--color-accent); color: var(--color-text-inverse); }
+.btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+.btn-secondary { background: var(--color-surface); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+.btn-secondary:hover:not(:disabled) { background: var(--color-bg); }
+
+.btn-ghost { background: transparent; color: var(--color-text-secondary); }
+.btn-ghost:hover:not(:disabled) { background: var(--color-bg); color: var(--color-text-primary); }
+
+.btn-destructive { background: var(--color-danger-bg); color: var(--color-danger-text); border-color: var(--color-risk-critical-border); }
+
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  padding: 2px var(--space-3);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+.badge-risk-low { background: var(--color-risk-low-bg); color: var(--color-risk-low-text); border-color: var(--color-risk-low-border); }
+.badge-risk-medium { background: var(--color-risk-medium-bg); color: var(--color-risk-medium-text); border-color: var(--color-risk-medium-border); }
+.badge-risk-high { background: var(--color-risk-high-bg); color: var(--color-risk-high-text); border-color: var(--color-risk-high-border); }
+.badge-risk-critical { background: var(--color-risk-critical-bg); color: var(--color-risk-critical-text); border-color: var(--color-risk-critical-border); }
+
+.badge-graph-on { background: var(--color-graph-bg); color: var(--color-graph-text); border-color: var(--color-graph-border); }
+.badge-graph-off { background: var(--color-surface-sunken); color: var(--color-text-tertiary); border-color: var(--color-border); }
+
+.badge-status-investigated { background: var(--color-info-bg); color: var(--color-info-text); }
+.badge-status-not-investigated { background: var(--color-surface-sunken); color: var(--color-text-tertiary); }
+.badge-status-running { background: var(--color-warning-bg); color: var(--color-warning-text); }
+
+.badge-ai { background: var(--color-ai-bg); color: var(--color-ai-text); border-color: var(--color-ai-border); }
+
+/* Card */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+.card-title {
+  font-size: var(--text-h1-size);
+  line-height: var(--text-h1-line);
+  font-weight: var(--text-h1-weight);
+  margin: 0;
+}
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-body-size); }
+.data-table thead th {
+  text-align: left;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.data-table tbody td {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover { background: var(--color-bg); cursor: pointer; }
+
+/* Empty / error state */
+.state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-16) var(--space-8);
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+.state-panel .state-icon { color: var(--color-text-tertiary); margin-bottom: var(--space-2); }
+.state-panel .state-title { font-size: var(--text-h2-size); font-weight: var(--text-h2-weight); color: var(--color-text-primary); }
+.state-panel.state-error .state-icon { color: var(--color-danger-text); }
+
+/* Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-border) 25%, var(--color-surface-sunken) 50%, var(--color-border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Tooltip */
+.tooltip-wrapper { position: relative; display: inline-flex; }
+.tooltip-bubble {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-text-primary);
+  color: var(--color-text-inverse);
+  font-size: var(--text-small-size);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
+  white-space: nowrap;
+  z-index: 10;
+}

@@ -1,0 +1,45 @@
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.filter-bar select,
+.filter-bar input {
+  height: 32px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  padding: 0 var(--space-2);
+  font-size: var(--text-small-size);
+  color: var(--color-text-primary);
+}
+.filter-bar input[type='number'] { width: 110px; }
+
+.filter-chip-group { display: flex; gap: var(--space-2); }
+.filter-chip {
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+.filter-chip.active {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-4);
+  font-size: var(--text-small-size);
+  color: var(--color-text-secondary);
+}

@@ -56,11 +56,18 @@ class InvestigationCache:
             self._store[key.as_tuple()] = report
 
     def has_case(self, case_id: str) -> bool:
-        """Used by case listing's investigation_status filter — true if
-        ANY (mode, backend, version) combination has a cached report for
-        this case_id."""
+        """True if ANY (mode, backend, version) combination has a cached
+        report for this case_id."""
         with self._lock:
             return any(k[0] == case_id for k in self._store)
+
+    def investigated_case_ids(self) -> set[str]:
+        """Every case_id with at least one cached report, across all
+        (mode, backend, version) combinations — the full set, not just
+        one page's worth, so callers can filter correctly before
+        pagination (src/api/repository.py::CaseRepository.list_cases)."""
+        with self._lock:
+            return {k[0] for k in self._store}
 
     def clear(self) -> None:
         with self._lock:

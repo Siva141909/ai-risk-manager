@@ -1,0 +1,76 @@
+.evidence-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.evidence-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+}
+.evidence-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+.evidence-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.evidence-retrospective {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-small-size);
+  color: var(--color-text-tertiary);
+}
+.evidence-summary {
+  margin: var(--space-2) 0;
+  font-size: var(--text-body-size);
+}
+.evidence-source {
+  font-size: var(--text-small-size);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+.evidence-empty {
+  color: var(--color-text-secondary);
+}
+
+/* AI interpretation blocks (docs/DESIGN_SYSTEM.md §7): dashed border,
+   AI-tinted surface — visually distinct from evidence-card above. */
+.ai-block {
+  border: 1px dashed var(--color-ai-border);
+  background: var(--color-ai-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.ai-block:last-child { margin-bottom: 0; }
+.ai-block-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.ai-block-title {
+  font-size: var(--text-h2-size);
+  font-weight: var(--text-h2-weight);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.ai-block-body {
+  font-size: var(--text-body-size);
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+}
+.ai-block-list {
+  margin: 0;
+  padding-left: var(--space-4);
+}

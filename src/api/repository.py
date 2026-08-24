@@ -94,7 +94,16 @@ class CaseRepository:
         end_dt: int | None = None,
         limit: int = 50,
         offset: int = 0,
+        investigation_status: str | None = None,
+        investigated_transaction_ids: set[int] | None = None,
     ) -> tuple[list[CaseSummary], int]:
+        """`investigation_status`/`investigated_transaction_ids` MUST be
+        applied here, before `total`/pagination are computed — filtering
+        after `.iloc[offset:offset+limit]` (as an earlier version of
+        this method's caller did, in `CaseService`) silently produces a
+        wrong `total` and can return an empty page even when many
+        matching rows exist elsewhere in the dataset, since the filter
+        would only ever see the page's own (unrelated) rows."""
         df = self._index
         if risk_tier is not None:
             df = df[df["ml_risk_tier"] == risk_tier]
@@ -104,6 +113,10 @@ class CaseRepository:
             df = df[df["TransactionDT"] >= start_dt]
         if end_dt is not None:
             df = df[df["TransactionDT"] <= end_dt]
+        if investigation_status is not None:
+            investigated_transaction_ids = investigated_transaction_ids or set()
+            is_investigated = df["TransactionID"].isin(investigated_transaction_ids)
+            df = df[is_investigated] if investigation_status == "investigated" else df[~is_investigated]
 
         total = len(df)
         page = df.sort_values("TransactionDT", kind="mergesort").iloc[offset : offset + limit]

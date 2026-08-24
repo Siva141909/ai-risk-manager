@@ -52,3 +52,26 @@ def test_list_cases_filter_by_investigation_status_not_investigated(client, firs
     assert resp.status_code == 200
     body = resp.json()
     assert all(item["has_investigation"] is False for item in body["items"])
+
+
+def test_investigation_status_filter_is_correct_before_pagination(client):
+    """Regression test (Phase 5B): investigation_status must filter the
+    FULL dataset before limit/offset and `total` is recomputed, not
+    just check the current page's rows — a fixed page of un-investigated
+    rows must never make `investigation_status=investigated` silently
+    report the whole dataset's total or miss a real investigated case
+    that happens to sit outside a small page."""
+    listing = client.get("/api/v1/cases", params={"limit": 1}).json()
+    full_total = listing["total"]
+
+    target_case_id = client.get("/api/v1/cases", params={"limit": 1, "offset": 200}).json()["items"][0]["case_id"]
+    investigate_resp = client.post("/api/v1/cases/investigate", json={"case_id": target_case_id})
+    assert investigate_resp.status_code == 200
+
+    resp = client.get("/api/v1/cases", params={"investigation_status": "investigated", "limit": 200})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["total"] < full_total  # never the unfiltered dataset size
+    assert all(item["has_investigation"] is True for item in body["items"])
+    assert any(item["case_id"] == target_case_id for item in body["items"])

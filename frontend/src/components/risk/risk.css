@@ -1,0 +1,22 @@
+.stat-tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-6);
+}
+.stat-tile-value {
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+}
+.stat-tile-label {
+  font-size: var(--text-small-size);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+}
+
+.stat-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+}
